@@ -27,9 +27,13 @@ def create_points(fn, num_points):
     pts = np.array(pts)
     return pts
 
+def visualize_data(pts):
+    plt.scatter(pts[:,0], pts[:,1])
+    plt.show()
+    
+
 
 if __name__ == "__main__":
     print('hi')
     pts = create_points('two_moons.png', 10000)
-    plt.scatter(pts[:,0], pts[:,1])
-    plt.show()
+    visualize_data(pts)

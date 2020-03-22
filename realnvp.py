@@ -9,7 +9,7 @@ tfb = tfp.bijectors
 
 import matplotlib.pyplot as plt
 import numpy as np
-from generate_points import create_points
+from generate_points import create_points, visualize_data
 
 import IPython
 
@@ -40,12 +40,18 @@ def make_nvp_flow():
     return dist
 
 def make_maf_flow():
-    num_bijectors=4
+    num_bijectors=8
     bijectors = []
     for i in range(num_bijectors):
         bijectors.append(tfb.MaskedAutoregressiveFlow(
-            shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
-                hidden_layers=[512,512])))
+            # shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
+                            # hidden_layers=[512,512])))
+            shift_and_log_scale_fn=tfb.AutoregressiveNetwork(
+                params=2,
+                hidden_units=[512,512])
+        )
+        )
+                         
         if i % 2 == 0:
             bijectors.append(tfb.BatchNormalization())
         bijectors.append(tfb.Permute(permutation=[1,0]))
@@ -82,6 +88,7 @@ def visualize(dist, final=False):
         arr[i].set_xlim([-10, 10])
         arr[i].set_ylim([-10, 10])
         arr[i].set_title(names[i])
+        arr[i].axis('equal')
     plt.show()
 
     if not final:
@@ -95,6 +102,7 @@ def visualize(dist, final=False):
     plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='blue')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
     plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='black')
+    plt.axis('equal')
     plt.show()
 
 
@@ -110,7 +118,7 @@ def train_step(dist, opt, x_samples):
 
 def train(dist, ds, opt):
     print("Training")
-    num_steps = int(2e5)
+    num_steps = int(2e4)
     itr = ds.__iter__()
     losses = []
     
@@ -119,7 +127,7 @@ def train(dist, ds, opt):
         x_samples = next(itr)
         loss = train_step(dist, opt, x_samples)
         
-        if i%10000 == 0:
+        if i%1000 == 0:
             print("{}/{}: loss={}".format(i, num_steps, loss))
             losses.append(loss.numpy())
 
@@ -128,8 +136,9 @@ def train(dist, ds, opt):
 
 def prepare():
     pts = create_points('two_moons.png', 10000)
+    visualize_data(pts)
     ds = tf.data.Dataset.from_tensor_slices(pts)
-    ds = ds.batch(100)
+    ds = ds.batch(900)
     ds = ds.repeat()
 
     dist = make_nvp_flow()
@@ -143,6 +152,7 @@ def prepare():
 if __name__ == "__main__":
     dist, ds, opt = prepare()
     visualize(dist)
+    # IPython.embed()
     losses = train(dist, ds, opt)
     visualize(dist, final=True)
     IPython.embed()
