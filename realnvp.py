@@ -9,7 +9,7 @@ tfb = tfp.bijectors
 
 import matplotlib.pyplot as plt
 import numpy as np
-from generate_points import create_points, visualize_data
+from generate_points import *
 
 import IPython
 
@@ -40,16 +40,16 @@ def make_nvp_flow():
     return dist
 
 def make_maf_flow():
-    num_bijectors=8
+    num_bijectors=5
     bijectors = []
     for i in range(num_bijectors):
         bijectors.append(tfb.MaskedAutoregressiveFlow(
-            # shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
-                            # hidden_layers=[512,512])))
-            shift_and_log_scale_fn=tfb.AutoregressiveNetwork(
-                params=2,
-                hidden_units=[512,512])
-        )
+            shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
+                            hidden_layers=[512,512]))
+        #     shift_and_log_scale_fn=tfb.AutoregressiveNetwork(
+        #         params=2,
+        #         hidden_units=[128, 128])
+        # )
         )
                          
         if i % 2 == 0:
@@ -78,13 +78,13 @@ def visualize(dist, final=False):
     for i in range(len(results)):
         X1 = results[i].numpy()
         idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
-        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=10, color='red')
+        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
         idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
-        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=10, color='green')
+        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
         idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] > 0)
-        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=10, color='blue')
+        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
         idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
-        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=10, color='black')
+        arr[i].scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
         arr[i].set_xlim([-10, 10])
         arr[i].set_ylim([-10, 10])
         arr[i].set_title(names[i])
@@ -95,13 +95,13 @@ def visualize(dist, final=False):
         return
     
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='red')
+    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='green')
+    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] > 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='blue')
+    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=10, color='black')
+    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
     plt.axis('equal')
     plt.show()
 
@@ -118,7 +118,7 @@ def train_step(dist, opt, x_samples):
 
 def train(dist, ds, opt):
     print("Training")
-    num_steps = int(2e4)
+    num_steps = int(501)
     itr = ds.__iter__()
     losses = []
     
@@ -127,7 +127,7 @@ def train(dist, ds, opt):
         x_samples = next(itr)
         loss = train_step(dist, opt, x_samples)
         
-        if i%1000 == 0:
+        if i%50 == 0:
             print("{}/{}: loss={}".format(i, num_steps, loss))
             losses.append(loss.numpy())
 
@@ -135,24 +135,31 @@ def train(dist, ds, opt):
 
 
 def prepare():
-    pts = create_points('two_moons.png', 10000)
+    # pts = create_points('two_moons.png', 10000)
+    pts = create_uniform_points(1000)
     visualize_data(pts)
     ds = tf.data.Dataset.from_tensor_slices(pts)
-    ds = ds.batch(900)
+    ds = ds.batch(1000)
     ds = ds.repeat()
 
-    dist = make_nvp_flow()
+    # dist = make_nvp_flow()
     dist = make_maf_flow()
-    opt = tf.keras.optimizers.Adam(1e-4)
+    opt = tf.keras.optimizers.Adam(1e-3)
 
     return dist, ds, opt
 
 
-
-if __name__ == "__main__":
+def run_eric_jang_tutorial():
     dist, ds, opt = prepare()
     visualize(dist)
     # IPython.embed()
     losses = train(dist, ds, opt)
     visualize(dist, final=True)
-    IPython.embed()
+    # IPython.embed()
+
+    
+
+
+if __name__ == "__main__":
+    run_eric_jang_tutorial()
+

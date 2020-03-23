@@ -10,7 +10,8 @@ import IPython
 
 
 
-
+def create_uniform_points(num_points):
+    return np.array(np.random.uniform(-1, 1, (num_points,2)), dtype='float32')
 
 def create_points(fn, num_points):
     with Image.open(fn) as image:
@@ -28,7 +29,8 @@ def create_points(fn, num_points):
     return pts
 
 def visualize_data(pts):
-    plt.scatter(pts[:,0], pts[:,1])
+    plt.scatter(pts[:,0], pts[:,1], s=5)
+    plt.axis('equal')
     plt.show()
     
 
