@@ -21,7 +21,7 @@ settings = {
     'method': 'NVP',
     'num_bijectors': 8,
     'learning_rate': 1e-4,
-    'train_iters': 2e4
+    'train_iters': 2e5
     }
 
 
@@ -32,11 +32,14 @@ class MAF(tf.keras.models.Model):
         self.output_dim = output_dim
         self.num_masked = num_masked
 
+        self.bijector_fns = []
+
         bijectors=[]
         for i in range(settings['num_bijectors']):
+            self.bijector_fns.append(tfb.masked_autoregressive_default_template(hidden_layers=[512,512]))
             bijectors.append(
                 tfb.MaskedAutoregressiveFlow(
-                    shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(hidden_layers=[512,512])
+                    shift_and_log_scale_fn=self.bijector_fns[-1]
                 )
             )
 
@@ -62,13 +65,20 @@ class RealNVP(tf.keras.models.Model):
         super(RealNVP, self).__init__(**kwargs)
         self.output_dim = output_dim
         self.num_masked = num_masked
-        self.shift_and_log_scale_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512])
 
+        self.bijector_fns = []
+        self.bijector_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512])
+        
         bijectors=[]
         for i in range(settings['num_bijectors']):
-            bijectors.append(tfb.RealNVP(num_masked=self.num_masked,
-                                         shift_and_log_scale_fn=self.shift_and_log_scale_fn))
+            self.bijector_fns.append(tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512]))
+            bijectors.append(
+                tfb.RealNVP(num_masked=self.num_masked,
+                            shift_and_log_scale_fn=self.bijector_fns[-1])
+            )
 
+            # bijectors.append(tfb.RealNVP(num_masked=self.num_masked,
+            #                              shift_and_log_scale_fn=self.bijector_fn))
 
             if i%2 == 0:
                 bijectors.append(tfb.BatchNormalization())
@@ -172,7 +182,12 @@ def print_settings():
     print("Using settings:")
     for k in settings.keys():
         print('{}: {}'.format(k, settings[k]))
-            
+
+def build_model(model):
+    x = model.flow.distribution.sample(8000)
+    for bijector in reversed(model.flow.bijector.bijectors):
+        x = bijector.forward(x)
+
 
 def run_tf2_tutorial():
     # pts = create_uniform_points(1000)
@@ -184,7 +199,7 @@ def run_tf2_tutorial():
     ds = ds.prefetch(3*settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
 
-    visualize_data(pts)
+    # visualize_data(pts)
 
     if settings['method'] == 'MAF':
         model = MAF(output_dim=2, num_masked=1)
@@ -192,6 +207,7 @@ def run_tf2_tutorial():
         model = RealNVP(output_dim=2, num_masked=1)
         
     model(pts)
+    build_model(model)
     model.summary()
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=settings['learning_rate'])
