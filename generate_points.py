@@ -24,8 +24,10 @@ def create_points(fn, num_points):
 
             pxl = image.getpixel((x,y))
             if pxl[0] != 255:
-                pts.append(pt*2-1)
+                pts.append(pt)
     pts = np.array(pts)
+    pts -= np.mean(pts, axis=0)
+    pts *= 5
     return pts
 
 def visualize_data(pts):

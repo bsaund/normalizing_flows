@@ -15,20 +15,33 @@ from time import time
 import IPython
 
 
+
+settings = {
+    'batch_size': 1500,
+    'method': 'NVP',
+    'num_bijectors': 8,
+    'learning_rate': 1e-4,
+    'train_iters': 2e4
+    }
+
+
+
 class MAF(tf.keras.models.Model):
     def __init__(self, output_dim, num_masked, **kwargs):
         super(MAF, self).__init__(**kwargs)
         self.output_dim = output_dim
         self.num_masked = num_masked
-        self.shift_and_log_scale_fn = tfb.masked_autoregressive_default_template(hidden_layers=[128,128])
 
-        num_bijectors = 8
         bijectors=[]
-        for i in range(num_bijectors):
-            bijectors.append(tfb.MaskedAutoregressiveFlow(shift_and_log_scale_fn=self.shift_and_log_scale_fn))
+        for i in range(settings['num_bijectors']):
+            bijectors.append(
+                tfb.MaskedAutoregressiveFlow(
+                    shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(hidden_layers=[512,512])
+                )
+            )
 
-            if i%2 == 0:
-                bijectors.append(tfb.BatchNormalization())
+            # if i%2 == 0:
+            #     bijectors.append(tfb.BatchNormalization())
 
             bijectors.append(tfb.Permute(permutation=[1,0]))
             
@@ -51,9 +64,8 @@ class RealNVP(tf.keras.models.Model):
         self.num_masked = num_masked
         self.shift_and_log_scale_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512])
 
-        num_bijectors = 8
         bijectors=[]
-        for i in range(num_bijectors):
+        for i in range(settings['num_bijectors']):
             bijectors.append(tfb.RealNVP(num_masked=self.num_masked,
                                          shift_and_log_scale_fn=self.shift_and_log_scale_fn))
 
@@ -76,14 +88,6 @@ class RealNVP(tf.keras.models.Model):
         return self.flow.sample(num)
 
     
-
-@tf.function
-def train_step(model, X, optimizer):
-    with tf.GradientTape() as tape:
-        loss = -tf.reduce_mean(model.flow.log_prob(X))
-    gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss
 
 
 def visualize(dist, final=False):
@@ -140,12 +144,22 @@ def visualize(dist, final=False):
     plt.axis('equal')
     plt.show()
 
+    
+@tf.function
+def train_step(model, X, optimizer):
+    with tf.GradientTape() as tape:
+        loss = -tf.reduce_mean(model.flow.log_prob(X))
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    return loss
+
+
 
 def train(model, ds, optimizer):
     start = time()
     itr = ds.__iter__()
-    for i in range(int(2e5 + 1)):
-    # for i in range(int(2e4 + 1)):
+    # for i in range(int(2e5 + 1)):
+    for i in range(int(settings['train_iters'] + 1)):
         X = next(itr)
         loss = train_step(model, X, optimizer)
         if i % 1000 == 0:
@@ -153,7 +167,11 @@ def train(model, ds, optimizer):
         # if i > 100 and np.log10(i) % 1 == 0:
         #     print("{}".format(i))
         #     visualize(model.flow)
-                  
+
+def print_settings():
+    print("Using settings:")
+    for k in settings.keys():
+        print('{}: {}'.format(k, settings[k]))
             
 
 def run_tf2_tutorial():
@@ -161,17 +179,22 @@ def run_tf2_tutorial():
     # pts = create_points('two_moons.png', 10000)
     pts = create_points('BRAD.png', 10000)
     ds = tf.data.Dataset.from_tensor_slices(pts)
-    ds = ds.batch(1000)
     ds = ds.repeat()
+    ds = ds.shuffle(buffer_size = 9000)
+    ds = ds.prefetch(3*settings['batch_size'])
+    ds = ds.batch(settings['batch_size'])
 
     visualize_data(pts)
 
-    # model = MAF(output_dim=2, num_masked=1)
-    model = RealNVP(output_dim=2, num_masked=1)
+    if settings['method'] == 'MAF':
+        model = MAF(output_dim=2, num_masked=1)
+    elif settings['method'] == 'NVP':
+        model = RealNVP(output_dim=2, num_masked=1)
+        
     model(pts)
     model.summary()
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=settings['learning_rate'])
     train(model, ds, optimizer)
 
 
