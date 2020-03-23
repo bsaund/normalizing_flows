@@ -26,7 +26,12 @@ class MAF(tf.keras.models.Model):
         bijectors=[]
         for i in range(num_bijectors):
             bijectors.append(tfb.MaskedAutoregressiveFlow(shift_and_log_scale_fn=self.shift_and_log_scale_fn))
+
+            if i%2 == 0:
+                bijectors.append(tfb.BatchNormalization())
+
             bijectors.append(tfb.Permute(permutation=[1,0]))
+            
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
 
         self.flow = tfd.TransformedDistribution(
@@ -38,6 +43,38 @@ class MAF(tf.keras.models.Model):
 
     def getFlow(self, num):
         return self.flow.sample(num)
+
+class RealNVP(tf.keras.models.Model):
+    def __init__(self, output_dim, num_masked, **kwargs):
+        super(RealNVP, self).__init__(**kwargs)
+        self.output_dim = output_dim
+        self.num_masked = num_masked
+        self.shift_and_log_scale_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512])
+
+        num_bijectors = 8
+        bijectors=[]
+        for i in range(num_bijectors):
+            bijectors.append(tfb.RealNVP(num_masked=self.num_masked,
+                                         shift_and_log_scale_fn=self.shift_and_log_scale_fn))
+
+
+            if i%2 == 0:
+                bijectors.append(tfb.BatchNormalization())
+
+            bijectors.append(tfb.Permute(permutation=[1,0]))
+            
+        bijector = tfb.Chain(list(reversed(bijectors[:-1])))
+
+        self.flow = tfd.TransformedDistribution(
+            distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
+            bijector=bijector)
+        
+    def call(self, *inputs):
+        return self.flow.bijector.forward(*inputs)
+
+    def getFlow(self, num):
+        return self.flow.sample(num)
+
     
 
 @tf.function
@@ -104,29 +141,43 @@ def visualize(dist, final=False):
     plt.show()
 
 
-def train(model, X, optimizer):
+def train(model, ds, optimizer):
     start = time()
-    for i in range(501):
+    itr = ds.__iter__()
+    for i in range(int(2e5 + 1)):
+    # for i in range(int(2e4 + 1)):
+        X = next(itr)
         loss = train_step(model, X, optimizer)
-        if i % 50 == 0:
+        if i % 1000 == 0:
             print("{} loss: {}, {}s".format(i, loss, time() - start))
+        # if i > 100 and np.log10(i) % 1 == 0:
+        #     print("{}".format(i))
+        #     visualize(model.flow)
+                  
             
 
 def run_tf2_tutorial():
-    pts = create_uniform_points(1000)
-    # pts = create_points('two_moons.png', 1000)
-    # visualize_data(pts)
+    # pts = create_uniform_points(1000)
+    # pts = create_points('two_moons.png', 10000)
+    pts = create_points('BRAD.png', 10000)
+    ds = tf.data.Dataset.from_tensor_slices(pts)
+    ds = ds.batch(1000)
+    ds = ds.repeat()
 
-    model = MAF(output_dim=2, num_masked=1)
+    visualize_data(pts)
+
+    # model = MAF(output_dim=2, num_masked=1)
+    model = RealNVP(output_dim=2, num_masked=1)
     model(pts)
     model.summary()
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    train(model, pts, optimizer)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    train(model, ds, optimizer)
 
 
-    XF = model.flow.sample(10000)
-    visualize(model.flow)
+    XF = model.flow.sample(2000)
+    visualize(model.flow, final=True)
+
     # visualize_data(XF.numpy())
 
 

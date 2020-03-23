@@ -19,12 +19,12 @@ def create_points(fn, num_points):
         pts = []
         while len(pts) < num_points:
             pt = np.random.rand(2).astype('f')
-            x = int(pt[0]*w)
-            y = int(pt[1]*h)
+            x = int((pt[0])*w)
+            y = int((1-pt[1])*h)
 
             pxl = image.getpixel((x,y))
             if pxl[0] != 255:
-                pts.append(pt)
+                pts.append(pt*2-1)
     pts = np.array(pts)
     return pts
 
