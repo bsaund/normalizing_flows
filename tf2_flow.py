@@ -77,9 +77,6 @@ class RealNVP(tf.keras.models.Model):
                             shift_and_log_scale_fn=self.bijector_fns[-1])
             )
 
-            # bijectors.append(tfb.RealNVP(num_masked=self.num_masked,
-            #                              shift_and_log_scale_fn=self.bijector_fn))
-
             if i%2 == 0:
                 bijectors.append(tfb.BatchNormalization())
 
@@ -102,7 +99,6 @@ class RealNVP(tf.keras.models.Model):
 
 def visualize(dist, final=False):
     # IPython.embed()
-    # x = base_dist.sample(8000)
     x = dist.distribution.sample(8000)
     samples = [x]
     names = [dist.distribution.name]
@@ -199,7 +195,7 @@ def run_tf2_tutorial():
     ds = ds.prefetch(3*settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
 
-    # visualize_data(pts)
+    visualize_data(pts)
 
     if settings['method'] == 'MAF':
         model = MAF(output_dim=2, num_masked=1)
