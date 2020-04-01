@@ -20,13 +20,32 @@ settings = {
     'batch_size': 1500,
     'method': 'NVP',
     'num_bijectors': 8,
-    'learning_rate': 1e-4,
-    'train_iters': 2e5
+    'learning_rate': 1e-5,
+    'train_iters': 5e4,
+    'visualize_data':False,
     }
 
 
 
-class MAF(tf.keras.models.Model):
+class Flow(tf.keras.models.Model):
+    def __init__(self, **kwargs):
+        super(Flow, self).__init__(**kwargs)
+        flow = None
+
+    def call(self, *inputs):
+        return self.flow.bijector.forward(*inputs)
+
+    @tf.function
+    def train_step(self, X, optimizer):
+        with tf.GradientTape() as tape:
+            loss = -tf.reduce_mean(self.flow.log_prob(X, training=True))
+            gradients = tape.gradient(loss, self.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        return loss
+
+    
+
+class MAF(Flow):
     def __init__(self, output_dim, num_masked, **kwargs):
         super(MAF, self).__init__(**kwargs)
         self.output_dim = output_dim
@@ -54,13 +73,8 @@ class MAF(tf.keras.models.Model):
             distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
             bijector=bijector)
         
-    def call(self, *inputs):
-        return self.flow.bijector.forward(*inputs)
 
-    def getFlow(self, num):
-        return self.flow.sample(num)
-
-class RealNVP(tf.keras.models.Model):
+class RealNVP(Flow):
     def __init__(self, output_dim, num_masked, **kwargs):
         super(RealNVP, self).__init__(**kwargs)
         self.output_dim = output_dim
@@ -77,27 +91,26 @@ class RealNVP(tf.keras.models.Model):
                             shift_and_log_scale_fn=self.bijector_fns[-1])
             )
 
+            # if i == 1:
+            #     bijectors.append(tfb.BatchNormalization())
             if i%2 == 0:
                 bijectors.append(tfb.BatchNormalization())
 
             bijectors.append(tfb.Permute(permutation=[1,0]))
-            
+
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
+        # bijector = tfb.Chain(bijectors[:-1])
 
         self.flow = tfd.TransformedDistribution(
             distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
             bijector=bijector)
         
-    def call(self, *inputs):
-        return self.flow.bijector.forward(*inputs)
 
-    def getFlow(self, num):
-        return self.flow.sample(num)
 
     
 
 
-def visualize(dist, final=False):
+def plot_layers(dist, final=False):
     # IPython.embed()
     x = dist.distribution.sample(8000)
     samples = [x]
@@ -151,28 +164,22 @@ def visualize(dist, final=False):
     plt.show()
 
     
-@tf.function
-def train_step(model, X, optimizer):
-    with tf.GradientTape() as tape:
-        loss = -tf.reduce_mean(model.flow.log_prob(X))
-    gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss
 
 
 
-def train(model, ds, optimizer):
+def train(model, ds, optimizer, print_period=1000):
     start = time()
     itr = ds.__iter__()
     # for i in range(int(2e5 + 1)):
     for i in range(int(settings['train_iters'] + 1)):
         X = next(itr)
-        loss = train_step(model, X, optimizer)
-        if i % 1000 == 0:
+        loss = model.train_step(X, optimizer).numpy()
+        if i % print_period == 0:
             print("{} loss: {}, {}s".format(i, loss, time() - start))
-        # if i > 100 and np.log10(i) % 1 == 0:
-        #     print("{}".format(i))
-        #     visualize(model.flow)
+            if np.isnan(loss):
+                break
+    return loss
+        
 
 def print_settings():
     print("Using settings:")
@@ -184,37 +191,60 @@ def build_model(model):
     for bijector in reversed(model.flow.bijector.bijectors):
         x = bijector.forward(x)
 
-
-def run_tf2_tutorial():
+def create_dataset():
     # pts = create_uniform_points(1000)
     # pts = create_points('two_moons.png', 10000)
     pts = create_points('BRAD.png', 10000)
+
+    if settings['visualize_data']:
+        visualize_data(pts)
+        
     ds = tf.data.Dataset.from_tensor_slices(pts)
     ds = ds.repeat()
     ds = ds.shuffle(buffer_size = 9000)
     ds = ds.prefetch(3*settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
 
-    visualize_data(pts)
+    return ds, pts
+
+
+        
+def train_model(display=True):
+    print_settings()
+    
+    ds, pts = create_dataset()
 
     if settings['method'] == 'MAF':
         model = MAF(output_dim=2, num_masked=1)
     elif settings['method'] == 'NVP':
         model = RealNVP(output_dim=2, num_masked=1)
-        
+
     model(pts)
     build_model(model)
-    model.summary()
+    if display:
+        model.summary()
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=settings['learning_rate'])
-    train(model, ds, optimizer)
+    loss = train(model, ds, optimizer)
+
+    if display:
+        XF = model.flow.sample(2000)
+        plot_layers(model.flow, final=True)
+
+    return loss
 
 
-    XF = model.flow.sample(2000)
-    visualize(model.flow, final=True)
+def run_statistics_trial():
+    final_loss = []
+    for i in range(10):
+        print()
+        final_loss.append(train_model(display=False))
+        print("Final loss for trial {} is {}".format(i, final_loss[-1]))
 
-    # visualize_data(XF.numpy())
+
+    print("Training failed {} of the time".format(np.sum(np.isnan(final_loss))*1.0/len(final_loss)))
 
 
 if __name__ == "__main__":
-    run_tf2_tutorial()
+    train_model()
+    # run_statistics_trial()
