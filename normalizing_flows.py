@@ -12,7 +12,7 @@ import numpy as np
 from generate_points import *
 from time import time
 
-import IPython
+# import IPython
 
 
 
@@ -21,7 +21,7 @@ settings = {
     'method': 'NVP',
     'num_bijectors': 8,
     'learning_rate': 1e-5,
-    'train_iters': 5e4,
+    'train_iters': 2e5,
     'visualize_data':False,
     }
 
@@ -85,14 +85,13 @@ class RealNVP(Flow):
         
         bijectors=[]
         for i in range(settings['num_bijectors']):
+            # Note: Must store the bijectors separately, otherwise only a single set of tf variables is created for all layers
             self.bijector_fns.append(tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512]))
             bijectors.append(
                 tfb.RealNVP(num_masked=self.num_masked,
                             shift_and_log_scale_fn=self.bijector_fns[-1])
             )
 
-            # if i == 1:
-            #     bijectors.append(tfb.BatchNormalization())
             if i%2 == 0:
                 bijectors.append(tfb.BatchNormalization())
 
@@ -111,6 +110,10 @@ class RealNVP(Flow):
 
 
 def plot_layers(dist, final=False):
+    """
+    Generate samples from the base distribution and visualize the motion of the points after each 
+    layer transformation
+    """
     # IPython.embed()
     x = dist.distribution.sample(8000)
     samples = [x]
@@ -168,6 +171,10 @@ def plot_layers(dist, final=False):
 
 
 def train(model, ds, optimizer, print_period=1000):
+    """
+    Train `model` on dataset `ds` using optimizer `optimizer`, 
+      prining the current loss every `print_period` iterations
+    """
     start = time()
     itr = ds.__iter__()
     # for i in range(int(2e5 + 1)):
@@ -182,11 +189,17 @@ def train(model, ds, optimizer, print_period=1000):
         
 
 def print_settings():
+    """
+    display the settings used when creating the model
+    """
     print("Using settings:")
     for k in settings.keys():
         print('{}: {}'.format(k, settings[k]))
 
 def build_model(model):
+    """
+    Run a pass of the model to initialize the tensorflow network
+    """
     x = model.flow.distribution.sample(8000)
     for bijector in reversed(model.flow.bijector.bijectors):
         x = bijector.forward(x)
@@ -209,7 +222,7 @@ def create_dataset():
 
 
         
-def train_model(display=True):
+def train_and_run_model(display=True):
     print_settings()
     
     ds, pts = create_dataset()
@@ -235,6 +248,9 @@ def train_model(display=True):
 
 
 def run_statistics_trial():
+    """
+    Runs 10 trials and reports the number of times training fails
+    """
     final_loss = []
     for i in range(10):
         print()
@@ -246,5 +262,5 @@ def run_statistics_trial():
 
 
 if __name__ == "__main__":
-    train_model()
+    train_and_run_model()
     # run_statistics_trial()
