@@ -1,8 +1,10 @@
 # Normalizing Flows
 
+Read the [accompianing blog post](https://www.bradsaund.com/post/normalizing_flows/)
+
 Normalizing flows have become popular for modeling distributions of data, for example unsupervised learning of image datasets. 
 
-For my first foray into Normalizing Flows I followed this great tutorial: https://blog.evjang.com/2018/01/nf2.html, which was originally written in Tensorflow 1. This repo is my implementation of the modern normalizing flow examples from the tutorial in tensorflow 2.
+For my first foray into Normalizing Flows I followed this [great tutorial](https://blog.evjang.com/2018/01/nf2.html), which was originally written in Tensorflow 1. This repo is my implementation of the modern normalizing flow examples from the tutorial in tensorflow 2.
 
 
 ## Installation
