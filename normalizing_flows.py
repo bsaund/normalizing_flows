@@ -92,7 +92,7 @@ class RealNVP(Flow):
                             shift_and_log_scale_fn=self.bijector_fns[-1])
             )
 
-            if i%2 == 0:
+            if i%3 == 0:
                 bijectors.append(tfb.BatchNormalization())
 
             bijectors.append(tfb.Permute(permutation=[1,0]))
@@ -129,13 +129,15 @@ def plot_layers(dist, final=False):
 
 
     rows = 4
-    cols = int(len(results)/rows)
+    cols = int(len(results)/rows) + (len(results) % rows > 0)
 
     f, arr = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
     i = 0
     # for i in range(len(results)):
     for r in range(rows):
         for c in range(cols):
+            if i >= len(results):
+                break
             X1 = results[i].numpy()
             idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
             arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
