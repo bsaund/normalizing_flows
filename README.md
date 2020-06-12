@@ -8,8 +8,8 @@ For my first foray into Normalizing Flows I followed this [great tutorial](https
 
 
 ## Installation
-1. Install [tensorflow](https://www.tensorflow.org/install), [tensorflow_probability](https://www.tensorflow.org/probability), [matplotlib](https://matplotlib.org/users/installing.html), and IPython (optional). Clone this repo.
-2. Train and run the model `./normalizing_flows.py`. It'll take about an hour to train. 
+1. Install [tensorflow](https://www.tensorflow.org/install), [tensorflow_probability](https://www.tensorflow.org/probability), [matplotlib](https://matplotlib.org/users/installing.html), and Pillow. Clone this repo.
+2. Train and run the model `./normalizing_flows.py`. It'll take about an hour to train. Reduce `train_iters` in in the `settings` dict to reduce the training time
 
 You should first see the training points: 
 
