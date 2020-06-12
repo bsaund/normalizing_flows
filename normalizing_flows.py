@@ -1,20 +1,15 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-
 import tensorflow as tf
 import tensorflow_probability as tfp
-tfd = tfp.distributions
-tfb = tfp.bijectors
-
 import matplotlib.pyplot as plt
 import numpy as np
-from generate_points import *
+from generate_points import create_uniform_points, create_points, visualize_data
 from time import time
 
-# import IPython
-
-
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 settings = {
     'batch_size': 1500,
@@ -22,9 +17,8 @@ settings = {
     'num_bijectors': 8,
     'learning_rate': 1e-5,
     'train_iters': 2e5,
-    'visualize_data':False,
-    }
-
+    'visualize_data': False,
+}
 
 
 class Flow(tf.keras.models.Model):
@@ -43,7 +37,6 @@ class Flow(tf.keras.models.Model):
             optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         return loss
 
-    
 
 class MAF(Flow):
     def __init__(self, output_dim, num_masked, **kwargs):
@@ -53,9 +46,9 @@ class MAF(Flow):
 
         self.bijector_fns = []
 
-        bijectors=[]
+        bijectors = []
         for i in range(settings['num_bijectors']):
-            self.bijector_fns.append(tfb.masked_autoregressive_default_template(hidden_layers=[512,512]))
+            self.bijector_fns.append(tfb.masked_autoregressive_default_template(hidden_layers=[512, 512]))
             bijectors.append(
                 tfb.MaskedAutoregressiveFlow(
                     shift_and_log_scale_fn=self.bijector_fns[-1]
@@ -65,14 +58,14 @@ class MAF(Flow):
             # if i%2 == 0:
             #     bijectors.append(tfb.BatchNormalization())
 
-            bijectors.append(tfb.Permute(permutation=[1,0]))
-            
+            bijectors.append(tfb.Permute(permutation=[1, 0]))
+
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
 
         self.flow = tfd.TransformedDistribution(
             distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
             bijector=bijector)
-        
+
 
 class RealNVP(Flow):
     def __init__(self, output_dim, num_masked, **kwargs):
@@ -81,21 +74,21 @@ class RealNVP(Flow):
         self.num_masked = num_masked
 
         self.bijector_fns = []
-        self.bijector_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512])
-        
-        bijectors=[]
+        self.bijector_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512, 512])
+
+        bijectors = []
         for i in range(settings['num_bijectors']):
             # Note: Must store the bijectors separately, otherwise only a single set of tf variables is created for all layers
-            self.bijector_fns.append(tfp.bijectors.real_nvp_default_template(hidden_layers=[512,512]))
+            self.bijector_fns.append(tfp.bijectors.real_nvp_default_template(hidden_layers=[512, 512]))
             bijectors.append(
                 tfb.RealNVP(num_masked=self.num_masked,
                             shift_and_log_scale_fn=self.bijector_fns[-1])
             )
 
-            if i%3 == 0:
+            if i % 3 == 0:
                 bijectors.append(tfb.BatchNormalization())
 
-            bijectors.append(tfb.Permute(permutation=[1,0]))
+            bijectors.append(tfb.Permute(permutation=[1, 0]))
 
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
         # bijector = tfb.Chain(bijectors[:-1])
@@ -103,10 +96,6 @@ class RealNVP(Flow):
         self.flow = tfd.TransformedDistribution(
             distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
             bijector=bijector)
-        
-
-
-    
 
 
 def plot_layers(dist, final=False):
@@ -114,7 +103,6 @@ def plot_layers(dist, final=False):
     Generate samples from the base distribution and visualize the motion of the points after each 
     layer transformation
     """
-    # IPython.embed()
     x = dist.distribution.sample(8000)
     samples = [x]
     names = [dist.distribution.name]
@@ -127,11 +115,10 @@ def plot_layers(dist, final=False):
 
     X0 = results[0].numpy()
 
-
     rows = 4
-    cols = int(len(results)/rows) + (len(results) % rows > 0)
+    cols = int(len(results) / rows) + (len(results) % rows > 0)
 
-    f, arr = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
+    f, arr = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
     i = 0
     # for i in range(len(results)):
     for r in range(rows):
@@ -142,21 +129,21 @@ def plot_layers(dist, final=False):
             idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
             arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
             idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
-            arr[r,c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
+            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
             idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] > 0)
-            arr[r,c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
+            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
             idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
-            arr[r,c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
-            arr[r,c].set_xlim([-5, 5])
-            arr[r,c].set_ylim([-5, 5])
-            arr[r,c].set_title(names[i])
-            arr[r,c].axis('equal')
+            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
+            arr[r, c].set_xlim([-5, 5])
+            arr[r, c].set_ylim([-5, 5])
+            arr[r, c].set_title(names[i])
+            arr[r, c].axis('equal')
             i += 1
     plt.show()
 
     if not final:
         return
-    
+
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
     plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
@@ -167,9 +154,6 @@ def plot_layers(dist, final=False):
     plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
     plt.axis('equal')
     plt.show()
-
-    
-
 
 
 def train(model, ds, optimizer, print_period=1000):
@@ -188,7 +172,7 @@ def train(model, ds, optimizer, print_period=1000):
             if np.isnan(loss):
                 break
     return loss
-        
+
 
 def print_settings():
     """
@@ -198,6 +182,7 @@ def print_settings():
     for k in settings.keys():
         print('{}: {}'.format(k, settings[k]))
 
+
 def build_model(model):
     """
     Run a pass of the model to initialize the tensorflow network
@@ -206,6 +191,7 @@ def build_model(model):
     for bijector in reversed(model.flow.bijector.bijectors):
         x = bijector.forward(x)
 
+
 def create_dataset():
     # pts = create_uniform_points(1000)
     # pts = create_points('two_moons.png', 10000)
@@ -213,20 +199,19 @@ def create_dataset():
 
     if settings['visualize_data']:
         visualize_data(pts)
-        
+
     ds = tf.data.Dataset.from_tensor_slices(pts)
     ds = ds.repeat()
-    ds = ds.shuffle(buffer_size = 9000)
-    ds = ds.prefetch(3*settings['batch_size'])
+    ds = ds.shuffle(buffer_size=9000)
+    ds = ds.prefetch(3 * settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
 
     return ds, pts
 
 
-        
 def train_and_run_model(display=True):
     print_settings()
-    
+
     ds, pts = create_dataset()
 
     if settings['method'] == 'MAF':
@@ -259,8 +244,7 @@ def run_statistics_trial():
         final_loss.append(train_model(display=False))
         print("Final loss for trial {} is {}".format(i, final_loss[-1]))
 
-
-    print("Training failed {} of the time".format(np.sum(np.isnan(final_loss))*1.0/len(final_loss)))
+    print("Training failed {} of the time".format(np.sum(np.isnan(final_loss)) * 1.0 / len(final_loss)))
 
 
 if __name__ == "__main__":

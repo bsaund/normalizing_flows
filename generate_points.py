@@ -5,14 +5,15 @@ from __future__ import print_function
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
-# import IPython
 
 """
 Functions for generating 2D "training" points used in normalizing flows
 """
 
+
 def create_uniform_points(num_points):
-    return np.array(np.random.uniform(-1, 1, (num_points,2)), dtype='float32')
+    return np.array(np.random.uniform(-1, 1, (num_points, 2)), dtype='float32')
+
 
 def create_points(file_name, num_points):
     """
@@ -23,10 +24,10 @@ def create_points(file_name, num_points):
         pts = []
         while len(pts) < num_points:
             pt = np.random.rand(2).astype('f')
-            x = int((pt[0])*w)
-            y = int((1-pt[1])*h)
+            x = int((pt[0]) * w)
+            y = int((1 - pt[1]) * h)
 
-            pxl = image.getpixel((x,y))
+            pxl = image.getpixel((x, y))
             if pxl[0] != 255:
                 pts.append(pt)
     pts = np.array(pts)
@@ -34,11 +35,11 @@ def create_points(file_name, num_points):
     pts *= 5
     return pts
 
+
 def visualize_data(pts):
-    plt.scatter(pts[:,0], pts[:,1], s=5)
+    plt.scatter(pts[:, 0], pts[:, 1], s=5)
     plt.axis('equal')
     plt.show()
-    
 
 
 if __name__ == "__main__":
