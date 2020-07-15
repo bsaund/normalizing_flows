@@ -45,3 +45,19 @@ Honestly, `tensorflow_distributions` does all of the heavy-lifting by implementi
 - Try changing the number of layers, types of layers, or other [settings](https://github.com/bsaund/normalizing_flows/blob/ff515f1c3b4c97c646ff375fa6de4f4a7847b256/normalizing_flows.py#L19-L25)
 - Implement a normalizing flow on some image training data
 
+
+## Citation:
+Feel free to copy and use this code in your projects. If you would like to cite this repo: 
+
+```
+@misc{bsaund_2020_flow,
+    author = {Brad Saund},
+    title = {Normalizing Flows},
+    year = 2020,
+    month = {april},
+    publisher = {Github},
+    journal = {GitHub repository},
+    url = {https://github.com/bsaund/normalizing_flows}
+}
+```
+
