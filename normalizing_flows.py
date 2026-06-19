@@ -53,7 +53,7 @@ settings = {
     'batch_size': 1500,
     'method': 'NVP',
     'num_bijectors': 8,
-    'learning_rate': 1e-5,
+    'learning_rate': 1e-4,
     'train_iters': 2e5,
     'visualize_data': False,
     'print_period': 1000,
@@ -230,14 +230,16 @@ def plot_layers(dist, final=False, save_path=None, step=None):
 
 def make_checkpoint_manager(model, optimizer, checkpoint_dir='checkpoints'):
     """
-    Create a tf.train.Checkpoint + CheckpointManager for the model's networks
-    and optimizer state. Keeps the 3 most recent checkpoints.
+    Create a tf.train.Checkpoint + CheckpointManager for the model's networks,
+    optimizer state, and a global step counter. Keeps the 3 most recent checkpoints.
     """
+    global_step = tf.Variable(0, trainable=False, dtype=tf.int64, name='global_step')
     ckpt_kwargs = {f'net_{i}': net for i, net in enumerate(model._bijector_nets)}
     ckpt_kwargs['optimizer'] = optimizer
+    ckpt_kwargs['global_step'] = global_step
     ckpt = tf.train.Checkpoint(**ckpt_kwargs)
     manager = tf.train.CheckpointManager(ckpt, checkpoint_dir, max_to_keep=3)
-    return ckpt, manager
+    return ckpt, manager, global_step
 
 
 def restore_if_available(ckpt, manager):
@@ -255,30 +257,43 @@ def train(model, ds, optimizer):
     Train `model` on dataset `ds` using optimizer `optimizer`.
     - Prints loss every settings['print_period'] steps.
     - Saves a layer-visualization PNG and checkpoint every settings['plot_period'] steps.
+    - Uses a persistent global_step so filenames and logs are continuous across restarts.
     Loss tensor stays on GPU between syncs to avoid CPU-GPU sync overhead.
     """
     print_period = settings['print_period']
-    plot_period = settings['plot_period']
+    plot_period  = settings['plot_period']
+    total_iters  = int(settings['train_iters'])
 
     os.makedirs('training_progress', exist_ok=True)
-    ckpt, manager = make_checkpoint_manager(model, optimizer)
+    ckpt, manager, global_step = make_checkpoint_manager(model, optimizer)
     restore_if_available(ckpt, manager)
 
+    start_step = int(global_step.numpy())
+    if start_step >= total_iters:
+        print("Already trained for {} steps, nothing to do.".format(start_step))
+        return None
+
+    print("Resuming from step {}.".format(start_step))
     start = time()
     itr = ds.__iter__()
     loss = None
-    for i in range(int(settings['train_iters'] + 1)):
+
+    for i in range(start_step, total_iters + 1):
         X = next(itr)
         loss = model.train_step(X, optimizer)
+        global_step.assign(i)
+
         if i % print_period == 0:
             loss_val = loss.numpy()
-            print("{} loss: {}, {}s".format(i, loss_val, time() - start))
+            print("{} loss: {}, {:.1f}s".format(i, loss_val, time() - start))
             if np.isnan(loss_val):
                 break
+
         if i % plot_period == 0:
             manager.save()
             save_path = 'training_progress/step_{:07d}.png'.format(i)
             plot_layers(model.flow, save_path=save_path, step=i)
+
     return loss.numpy()
 
 

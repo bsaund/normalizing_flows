@@ -206,9 +206,10 @@ def plot_trajectory(model, save_path=None, step=None):
 # ---------------------------------------------------------------------------
 
 def make_checkpoint_manager(model, optimizer, checkpoint_dir='checkpoints_fm'):
-    ckpt    = tf.train.Checkpoint(model=model, optimizer=optimizer)
+    global_step = tf.Variable(0, trainable=False, dtype=tf.int64, name='global_step')
+    ckpt    = tf.train.Checkpoint(model=model, optimizer=optimizer, global_step=global_step)
     manager = tf.train.CheckpointManager(ckpt, checkpoint_dir, max_to_keep=3)
-    return ckpt, manager
+    return ckpt, manager, global_step
 
 
 def restore_if_available(ckpt, manager):
@@ -228,21 +229,30 @@ def train(model, ds, optimizer):
     """
     Training loop.  Prints loss every print_period steps, saves a trajectory
     plot + checkpoint every plot_period steps.
+    Uses a persistent global_step so filenames and logs are continuous across restarts.
     """
     print_period = settings['print_period']
     plot_period  = settings['plot_period']
+    total_iters  = int(settings['train_iters'])
 
     os.makedirs('training_progress_fm', exist_ok=True)
-    ckpt, manager = make_checkpoint_manager(model, optimizer)
+    ckpt, manager, global_step = make_checkpoint_manager(model, optimizer)
     restore_if_available(ckpt, manager)
 
+    start_step = int(global_step.numpy())
+    if start_step >= total_iters:
+        print("Already trained for {} steps, nothing to do.".format(start_step))
+        return float('nan')
+
+    print("Resuming from step {}.".format(start_step))
     start = time()
     itr   = iter(ds)
     loss  = None
 
-    for i in range(int(settings['train_iters'] + 1)):
+    for i in range(start_step, total_iters + 1):
         x1_batch = next(itr)
         loss     = model.train_step(x1_batch, optimizer)
+        global_step.assign(i)
 
         if i % print_period == 0:
             loss_val = loss.numpy()
