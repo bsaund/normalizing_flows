@@ -8,8 +8,28 @@ For my first foray into Normalizing Flows I followed this [great tutorial](https
 
 
 ## Installation
-1. Install [tensorflow](https://www.tensorflow.org/install), [tensorflow_probability](https://www.tensorflow.org/probability), [matplotlib](https://matplotlib.org/users/installing.html), and Pillow. Clone this repo.
-2. Train and run the model `./normalizing_flows.py`. It'll take about an hour to train. Reduce `train_iters` in in the `settings` dict to reduce the training time
+
+```bash
+# 1. Clone the repo and create a virtual environment
+git clone https://github.com/bsaund/normalizing_flows.git
+cd normalizing_flows
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 3. Train and run the model (~1 hour on CPU; reduce train_iters in settings to speed up)
+python normalizing_flows.py
+```
+
+> **GPU note:** The default install uses `tensorflow-cpu`. If you have a working NVIDIA GPU
+> and drivers, replace `tensorflow-cpu` with `tensorflow[and-cuda]` in `requirements.txt`.
+
+> **Keras compatibility note:** TF 2.16+ ships with Keras 3, which breaks TensorFlow
+> Probability. `tensorflow-probability[tf]` automatically installs `tf-keras` (Keras 2)
+> to work around this.
 
 You should first see the training points: 
 

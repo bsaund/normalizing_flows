@@ -1,0 +1,10 @@
+# Core ML stack
+# tensorflow-probability[tf] installs tf-keras (Keras 2) alongside TF, which is
+# required because TFP is not compatible with Keras 3 (used in TF 2.16+).
+tensorflow-cpu==2.21.0
+tensorflow-probability[tf]==0.25.0
+
+# Data / visualization
+numpy
+matplotlib
+Pillow

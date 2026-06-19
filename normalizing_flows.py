@@ -1,8 +1,17 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
+import os
+# Suppress the wrapt C-extension warning that fires on Python 3.12
+os.environ.setdefault("WRAPT_DISABLE_EXTENSIONS", "1")
+
 import tensorflow as tf
 import tensorflow_probability as tfp
+
+# TFP requires Keras 2 (tf_keras), not Keras 3 bundled with TF 2.16+.
+# tf_keras is installed automatically by `tensorflow-probability[tf]`.
+import tf_keras
+
 import matplotlib.pyplot as plt
 import numpy as np
 from generate_points import create_uniform_points, create_points, visualize_data
@@ -10,6 +19,30 @@ from time import time
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
+
+
+def make_nvp_network(hidden_units, output_units):
+    """Return a Keras model used as the shift-and-log-scale network for RealNVP."""
+    return tf_keras.Sequential([
+        tf_keras.layers.Dense(h, activation="relu") for h in hidden_units
+    ] + [tf_keras.layers.Dense(output_units * 2)])
+
+
+def nvp_shift_and_log_scale_fn(hidden_units, output_units):
+    """
+    Factory that returns a (callable, network) pair for tfb.RealNVP's
+    shift_and_log_scale_fn.  Each call creates a fresh set of Keras weights,
+    so call this once per bijector layer.  The returned network must be stored
+    on the model so its variables are tracked for gradient updates.
+    """
+    net = make_nvp_network(hidden_units, output_units)
+
+    def fn(x, input_depth=None, **kwargs):
+        out = net(x)
+        shift, log_scale = tf.split(out, 2, axis=-1)
+        return shift, log_scale
+
+    return fn, net
 
 settings = {
     'batch_size': 1500,
@@ -21,20 +54,33 @@ settings = {
 }
 
 
-class Flow(tf.keras.models.Model):
+class Flow(tf_keras.Model):
     def __init__(self, **kwargs):
         super(Flow, self).__init__(**kwargs)
-        flow = None
+        self.flow = None
+        # Keras networks backing the bijectors — tracked for trainable_variables
+        self._bijector_nets = []
 
     def call(self, *inputs):
         return self.flow.bijector.forward(*inputs)
 
-    @tf.function
+    @property
+    def trainable_variables(self):
+        # Collect variables from all backing networks
+        vars_ = []
+        seen = set()
+        for net in self._bijector_nets:
+            for v in net.trainable_variables:
+                if id(v) not in seen:
+                    seen.add(id(v))
+                    vars_.append(v)
+        return vars_
+
     def train_step(self, X, optimizer):
         with tf.GradientTape() as tape:
             loss = -tf.reduce_mean(self.flow.log_prob(X, training=True))
-            gradients = tape.gradient(loss, self.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        gradients = tape.gradient(loss, self.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         return loss
 
 
@@ -44,20 +90,15 @@ class MAF(Flow):
         self.output_dim = output_dim
         self.num_masked = num_masked
 
-        self.bijector_fns = []
-
         bijectors = []
         for i in range(settings['num_bijectors']):
-            self.bijector_fns.append(tfb.masked_autoregressive_default_template(hidden_layers=[512, 512]))
+            # AutoregressiveNetwork is the modern, Keras-native replacement for
+            # masked_autoregressive_default_template
+            net = tfb.AutoregressiveNetwork(params=2, hidden_units=[512, 512], activation="relu")
+            self._bijector_nets.append(net)
             bijectors.append(
-                tfb.MaskedAutoregressiveFlow(
-                    shift_and_log_scale_fn=self.bijector_fns[-1]
-                )
+                tfb.MaskedAutoregressiveFlow(shift_and_log_scale_fn=net)
             )
-
-            # if i%2 == 0:
-            #     bijectors.append(tfb.BatchNormalization())
-
             bijectors.append(tfb.Permute(permutation=[1, 0]))
 
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
@@ -73,16 +114,15 @@ class RealNVP(Flow):
         self.output_dim = output_dim
         self.num_masked = num_masked
 
-        self.bijector_fns = []
-        self.bijector_fn = tfp.bijectors.real_nvp_default_template(hidden_layers=[512, 512])
-
         bijectors = []
         for i in range(settings['num_bijectors']):
-            # Note: Must store the bijectors separately, otherwise only a single set of tf variables is created for all layers
-            self.bijector_fns.append(tfp.bijectors.real_nvp_default_template(hidden_layers=[512, 512]))
+            # Each layer needs its own network; store nets so their variables are tracked.
+            # Note: Must store the bijectors separately, otherwise only a single set of
+            # tf variables is created for all layers.
+            fn, net = nvp_shift_and_log_scale_fn(hidden_units=[512, 512], output_units=num_masked)
+            self._bijector_nets.append(net)
             bijectors.append(
-                tfb.RealNVP(num_masked=self.num_masked,
-                            shift_and_log_scale_fn=self.bijector_fns[-1])
+                tfb.RealNVP(num_masked=self.num_masked, shift_and_log_scale_fn=fn)
             )
 
             if i % 3 == 0:
@@ -91,7 +131,6 @@ class RealNVP(Flow):
             bijectors.append(tfb.Permute(permutation=[1, 0]))
 
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
-        # bijector = tfb.Chain(bijectors[:-1])
 
         self.flow = tfd.TransformedDistribution(
             distribution=tfd.MultivariateNormalDiag(loc=[0.0, 0.0]),
@@ -224,7 +263,7 @@ def train_and_run_model(display=True):
     if display:
         model.summary()
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=settings['learning_rate'])
+    optimizer = tf_keras.optimizers.Adam(learning_rate=settings['learning_rate'])
     loss = train(model, ds, optimizer)
 
     if display:
