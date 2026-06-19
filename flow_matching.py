@@ -20,6 +20,8 @@ import tensorflow as tf
 import tf_keras
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial.distance import cdist
 from generate_points import create_points, visualize_data
 from time import time
 
@@ -38,9 +40,45 @@ settings = {
     'print_period': 1000,
     'plot_period': 500,
     'plot_axis_limit': 5.0,
-    'ode_steps': 5,        # Euler steps used when sampling
+    'ode_steps': 5,          # Euler steps used when sampling
     'plot_t_steps': 8,       # number of time slices shown in the layer plot
+    # OT-CFM: pair noise→data optimally per mini-batch to reduce path crossings.
+    # linear_sum_assignment is O(n³) so ot_batch_size must stay small (≤512).
+    # The full training batch is split into chunks of this size.
+    'use_ot': True,
+    'ot_batch_size': 256,
 }
+
+
+# ---------------------------------------------------------------------------
+# OT pairing
+# ---------------------------------------------------------------------------
+
+def ot_pair(x0: np.ndarray, x1: np.ndarray) -> np.ndarray:
+    """
+    Reorder x1 so that pair (x0[i], x1[i]) minimises total ||x0 - x1||².
+
+    Uses scipy's exact Hungarian algorithm — O(n³) — so keep n ≤ 512.
+    Returns the reordered x1 (same shape as input x1).
+    """
+    cost = cdist(x0, x1, metric='sqeuclidean')   # (n, n)
+    _, col_ind = linear_sum_assignment(cost)
+    return x1[col_ind]
+
+
+def ot_pair_batch(x0: np.ndarray, x1: np.ndarray, chunk_size: int) -> np.ndarray:
+    """
+    Apply mini-batch OT pairing to a large batch by splitting into chunks.
+
+    x0, x1: (N, 2) numpy arrays  (N may be larger than chunk_size)
+    Returns x1 reordered to minimise transport cost within each chunk.
+    """
+    n = x0.shape[0]
+    x1_paired = np.empty_like(x1)
+    for start in range(0, n, chunk_size):
+        end = min(start + chunk_size, n)
+        x1_paired[start:end] = ot_pair(x0[start:end], x1[start:end])
+    return x1_paired
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +156,26 @@ class VelocityField(tf_keras.Model):
 
         x_t   = (1.0 - t) * x0 + t * x1_batch
         u_t   = x1_batch - x0          # target velocity (independent of t)
+
+        with tf.GradientTape() as tape:
+            v_pred = self(x_t, t, training=True)
+            loss   = tf.reduce_mean(tf.square(v_pred - u_t))
+
+        grads = tape.gradient(loss, self.trainable_variables)
+        optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        return loss
+
+    @tf.function
+    def train_step_ot(self, x0_batch, x1_batch, optimizer):
+        """
+        OT-CFM training step with pre-paired (x0, x1).
+
+        OT pairing is done in numpy before this call (see ot_pair_batch).
+        This function only handles the TF graph: interpolate, forward pass, update.
+        """
+        t   = tf.random.uniform((tf.shape(x0_batch)[0], 1))
+        x_t = (1.0 - t) * x0_batch + t * x1_batch
+        u_t = x1_batch - x0_batch
 
         with tf.GradientTape() as tape:
             v_pred = self(x_t, t, training=True)
@@ -278,9 +336,21 @@ def train(model, ds, optimizer):
     itr   = iter(ds)
     loss  = None
 
+    use_ot     = settings['use_ot']
+    chunk_size = settings['ot_batch_size']
+
     for i in range(start_step, total_iters + 1):
         x1_batch = next(itr)
-        loss     = model.train_step(x1_batch, optimizer)
+
+        if use_ot:
+            x1_np = x1_batch.numpy()
+            x0_np = np.random.randn(*x1_np.shape).astype(np.float32)
+            x1_paired = ot_pair_batch(x0_np, x1_np, chunk_size)
+            loss = model.train_step_ot(
+                tf.constant(x0_np), tf.constant(x1_paired), optimizer)
+        else:
+            loss = model.train_step(x1_batch, optimizer)
+
         global_step.assign(i)
 
         if i % print_period == 0:

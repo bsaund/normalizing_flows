@@ -13,3 +13,4 @@ tensorflow-probability[tf]==0.25.0
 numpy
 matplotlib
 Pillow
+scipy
