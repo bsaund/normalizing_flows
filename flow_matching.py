@@ -30,9 +30,9 @@ for _gpu in tf.config.list_physical_devices('GPU'):
 
 settings = {
     'batch_size': 1500,
-    'learning_rate': 3e-4,
+    'learning_rate': 1e-4,
     'train_iters': 2e5,
-    'hidden_units': [512, 512],
+    'hidden_units': [512, 512, 512],
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
@@ -51,20 +51,22 @@ def sinusoidal_time_embedding(t, dim):
     """
     Map scalar time t ∈ [0,1] to a (batch, dim) sinusoidal embedding.
 
-    Uses log-spaced frequencies so the network can distinguish both coarse
-    (slow) and fine (fast) time variation.  Same idea as positional encodings
-    in transformers.
+    Frequencies are log-spaced from 1 to 10000, matching the canonical
+    transformer positional encoding (Vaswani et al., 2017) and most
+    diffusion/flow matching implementations.
+
+    Low frequencies (≈1)     → slow sinusoids, coarse time structure
+    High frequencies (≈10000) → fast sinusoids, fine time structure
 
     t:   (batch, 1) float32
     dim: even integer — output size (dim/2 sin + dim/2 cos components)
     """
     assert dim % 2 == 0
     half = dim // 2
-    # Frequencies: 1, ..., 1000  in log scale
-    freqs = tf.exp(
-        -math.log(1000.0) * tf.cast(tf.range(half), tf.float32) / (half - 1)
-    )                                          # (half,)
-    angles = t * freqs                         # (batch, half)
+    # freq[i] = 10000^(i / (half-1)) for i in 0..half-1
+    log_freqs = tf.linspace(0.0, math.log(10000.0), half)  # (half,)
+    freqs     = tf.exp(log_freqs)                           # (half,) from 1 to 10000
+    angles    = t * freqs                                   # (batch, half)
     return tf.concat([tf.sin(angles), tf.cos(angles)], axis=-1)  # (batch, dim)
 
 
