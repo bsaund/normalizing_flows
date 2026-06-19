@@ -24,8 +24,9 @@ pip install -r requirements.txt
 python normalizing_flows.py
 ```
 
-> **GPU note:** The default install uses `tensorflow-cpu`. If you have a working NVIDIA GPU
-> and drivers, replace `tensorflow-cpu` with `tensorflow[and-cuda]` in `requirements.txt`.
+> **GPU note:** The default install uses `tensorflow[and-cuda]` (requires NVIDIA driver 520+
+> and CUDA 12). For CPU-only, replace `tensorflow[and-cuda]` with `tensorflow-cpu` in
+> `requirements.txt`. Do not install both — they conflict.
 
 > **Keras compatibility note:** TF 2.16+ ships with Keras 3, which breaks TensorFlow
 > Probability. `tensorflow-probability[tf]` automatically installs `tf-keras` (Keras 2)
