@@ -81,6 +81,7 @@ class Flow(tf_keras.Model):
                     vars_.append(v)
         return vars_
 
+    @tf.function
     def train_step(self, X, optimizer):
         with tf.GradientTape() as tape:
             loss = -tf.reduce_mean(self.flow.log_prob(X, training=True))
@@ -203,20 +204,21 @@ def plot_layers(dist, final=False):
 
 def train(model, ds, optimizer, print_period=1000):
     """
-    Train `model` on dataset `ds` using optimizer `optimizer`, 
-      prining the current loss every `print_period` iterations
+    Train `model` on dataset `ds` using optimizer `optimizer`,
+    printing the current loss every `print_period` iterations.
+    Loss tensor stays on GPU between prints to avoid CPU-GPU sync overhead.
     """
     start = time()
     itr = ds.__iter__()
-    # for i in range(int(2e5 + 1)):
     for i in range(int(settings['train_iters'] + 1)):
         X = next(itr)
-        loss = model.train_step(X, optimizer).numpy()
+        loss = model.train_step(X, optimizer)
         if i % print_period == 0:
-            print("{} loss: {}, {}s".format(i, loss, time() - start))
-            if np.isnan(loss):
+            loss_val = loss.numpy()
+            print("{} loss: {}, {}s".format(i, loss_val, time() - start))
+            if np.isnan(loss_val):
                 break
-    return loss
+    return loss.numpy()
 
 
 def print_settings():
