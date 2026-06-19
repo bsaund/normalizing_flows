@@ -57,8 +57,8 @@ settings = {
     'train_iters': 2e5,
     'visualize_data': False,
     'print_period': 1000,
-    'plot_period': 100,
-    'plot_axis_limit': 5.0,  # fixed axis bounds for all frames so video is stable
+    'plot_period': 500,
+    'plot_axis_limit': 4.0,  # fixed axis bounds for all frames so video is stable
 }
 
 
@@ -152,6 +152,9 @@ def plot_layers(dist, final=False, save_path=None, step=None):
     """
     lim = settings['plot_axis_limit']
 
+    # Fixed seed so the same base points are used every frame — eliminates
+    # random jitter between frames in the training video.
+    tf.random.set_seed(42)
     x = dist.distribution.sample(8000)
     samples = [x]
     names = [dist.distribution.name]
