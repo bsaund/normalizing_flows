@@ -12,6 +12,7 @@ just an MSE loss on a randomly sampled (x_t, target_velocity) pair.
 """
 from __future__ import print_function
 
+import math
 import os
 os.environ.setdefault("WRAPT_DISABLE_EXTENSIONS", "1")
 
@@ -32,6 +33,7 @@ settings = {
     'learning_rate': 1e-4,
     'train_iters': 2e5,
     'hidden_units': [512, 512],
+    'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
     'plot_period': 100,
@@ -45,20 +47,42 @@ settings = {
 # Model
 # ---------------------------------------------------------------------------
 
+def sinusoidal_time_embedding(t, dim):
+    """
+    Map scalar time t ∈ [0,1] to a (batch, dim) sinusoidal embedding.
+
+    Uses log-spaced frequencies so the network can distinguish both coarse
+    (slow) and fine (fast) time variation.  Same idea as positional encodings
+    in transformers.
+
+    t:   (batch, 1) float32
+    dim: even integer — output size (dim/2 sin + dim/2 cos components)
+    """
+    assert dim % 2 == 0
+    half = dim // 2
+    # Frequencies: 1, ..., 1000  in log scale
+    freqs = tf.exp(
+        -math.log(1000.0) * tf.cast(tf.range(half), tf.float32) / (half - 1)
+    )                                          # (half,)
+    angles = t * freqs                         # (batch, half)
+    return tf.concat([tf.sin(angles), tf.cos(angles)], axis=-1)  # (batch, dim)
+
+
 class VelocityField(tf_keras.Model):
     """
     MLP that predicts the velocity v_θ(x, t) at position x and time t.
 
-    Input:  [x₀, x₁, t]  — 2D position concatenated with scalar time  (3 dims)
-    Output: [v₀, v₁]     — 2D velocity                                  (2 dims)
+    Input:  [x, sin/cos-embed(t)]  — 2D position + sinusoidal time embedding
+    Output: [v₀, v₁]              — 2D velocity
 
-    Time t ∈ [0, 1] is appended as a single feature.  A sinusoidal encoding
-    is not strictly necessary for a 2D toy problem, but helps the network
-    distinguish early vs. late stages of the flow.
+    Sinusoidal embedding gives the network explicit multi-frequency access to t,
+    making it much easier to learn time-varying velocity fields compared to
+    appending raw t as a single scalar.
     """
-    def __init__(self, hidden_units=None, **kwargs):
+    def __init__(self, hidden_units=None, time_embed_dim=None, **kwargs):
         super().__init__(**kwargs)
-        hidden_units = hidden_units or settings['hidden_units']
+        hidden_units    = hidden_units    or settings['hidden_units']
+        self.embed_dim  = time_embed_dim  or settings['time_embed_dim']
         self.net = tf_keras.Sequential(
             [tf_keras.layers.Dense(h, activation='relu') for h in hidden_units]
             + [tf_keras.layers.Dense(2)]
@@ -69,8 +93,9 @@ class VelocityField(tf_keras.Model):
         x: (batch, 2)
         t: (batch, 1)  or scalar broadcast-able to (batch, 1)
         """
-        t = tf.broadcast_to(tf.reshape(t, (-1, 1)), (tf.shape(x)[0], 1))
-        xt = tf.concat([x, t], axis=-1)
+        t   = tf.broadcast_to(tf.reshape(t, (-1, 1)), (tf.shape(x)[0], 1))
+        t_e = sinusoidal_time_embedding(t, self.embed_dim)  # (batch, embed_dim)
+        xt  = tf.concat([x, t_e], axis=-1)                  # (batch, 2+embed_dim)
         return self.net(xt)
 
     @tf.function
