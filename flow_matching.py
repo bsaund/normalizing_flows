@@ -53,21 +53,24 @@ def sinusoidal_time_embedding(t, dim):
     """
     Map scalar time t ∈ [0,1] to a (batch, dim) sinusoidal embedding.
 
-    Frequencies are log-spaced from 1 to 10000, matching the canonical
-    transformer positional encoding (Vaswani et al., 2017) and most
-    diffusion/flow matching implementations.
-
-    Low frequencies (≈1)      → slow sinusoids, coarse time structure
-    High frequencies (≈10000) → fast sinusoids, fine time structure
+    Canonical transformer positional encoding (Vaswani et al., 2017):
+      angle_i = t / 10000^(i / half)
+    Index 0: divides by 1     → fast sinusoid (fine time structure)
+    Index half: divides by 10k → slow sinusoid (coarse time structure)
 
     t:   (batch, 1) float32
     dim: even integer — output size (dim/2 sin + dim/2 cos components)
     """
     assert dim % 2 == 0
     half = dim // 2
+
+    t = tf.cast(t, tf.float32)
+
     log_freqs = tf.linspace(0.0, math.log(10000.0), half)  # (half,)
     freqs     = tf.exp(log_freqs)                           # (half,) from 1 to 10000
-    angles    = t * freqs                                   # (batch, half)
+    freqs     = tf.expand_dims(freqs, axis=0)               # (1, half) for clean broadcasting
+
+    angles = t / freqs                                      # (batch, half)
     return tf.concat([tf.sin(angles), tf.cos(angles)], axis=-1)  # (batch, dim)
 
 
