@@ -132,9 +132,6 @@ class RealNVP(Flow):
                 tfb.RealNVP(num_masked=self.num_masked, shift_and_log_scale_fn=fn)
             )
 
-            if i % 3 == 0:
-                bijectors.append(tfb.BatchNormalization())
-
             bijectors.append(tfb.Permute(permutation=[1, 0]))
 
         bijector = tfb.Chain(list(reversed(bijectors[:-1])))
