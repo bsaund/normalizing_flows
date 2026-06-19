@@ -80,6 +80,7 @@ class Flow(tf_keras.Model):
         with tf.GradientTape() as tape:
             loss = -tf.reduce_mean(self.flow.log_prob(X, training=True))
         gradients = tape.gradient(loss, self.trainable_variables)
+        gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
         optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         return loss
 
@@ -263,7 +264,8 @@ def train_and_run_model(display=True):
     if display:
         model.summary()
 
-    optimizer = tf_keras.optimizers.Adam(learning_rate=settings['learning_rate'])
+    optimizer = tf_keras.optimizers.Adam(
+        learning_rate=settings['learning_rate'], jit_compile=False)
     loss = train(model, ds, optimizer)
 
     if display:
