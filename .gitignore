@@ -4,4 +4,6 @@ __pycache__/
 *.pyo
 .pytest_cache/
 training_progress/
+training_progress_fm/
 checkpoints/
+checkpoints_fm/
