@@ -39,7 +39,7 @@ settings = {
     'visualize_data': False,
     'print_period': 1000,
     'plot_period': 500,
-    'plot_axis_limit': 5.0,
+    'plot_axis_limit': 4.0,
     'ode_steps': 100,        # Euler steps used when integrating the ODE
     'plot_t_steps': 8,       # number of time slices shown in the trajectory plot
 }
@@ -157,9 +157,25 @@ class VelocityField(tf_keras.Model):
 # Visualization
 # ---------------------------------------------------------------------------
 
+def make_velocity_grid(model, t_val, lim, grid_n=20):
+    """
+    Evaluate the velocity field on a regular (grid_n x grid_n) grid at time t_val.
+    Returns (gx, gy, vx, vy) — all shape (grid_n, grid_n).
+    """
+    lin  = np.linspace(-lim, lim, grid_n)
+    gx, gy = np.meshgrid(lin, lin)                        # (grid_n, grid_n)
+    pts  = np.stack([gx.ravel(), gy.ravel()], axis=1).astype(np.float32)
+    t_tf = tf.fill((pts.shape[0], 1), float(t_val))
+    v    = model(tf.constant(pts), t_tf, training=False).numpy()
+    vx   = v[:, 0].reshape(grid_n, grid_n)
+    vy   = v[:, 1].reshape(grid_n, grid_n)
+    return gx, gy, vx, vy
+
+
 def plot_trajectory(model, save_path=None, step=None):
     """
-    Show the ODE trajectory at evenly-spaced time slices t=0…1.
+    Show the ODE trajectory at evenly-spaced time slices t=0…1, with the
+    learned velocity field overlaid as a quiver plot on each panel.
     All panels share fixed axis bounds for stable video frames.
     """
     lim      = settings['plot_axis_limit']
@@ -184,6 +200,8 @@ def plot_trajectory(model, save_path=None, step=None):
     X0 = snapshots[0]
     for idx, (ax, snap) in enumerate(zip(arr.flat, snapshots)):
         t_val = idx / (n_slices - 1)
+
+        # --- scatter: particles colored by starting quadrant ---
         q = np.stack([X0[:, 0] < 0, X0[:, 1] < 0], axis=1)
         colors = {(True,  True):  'red',
                   (False, True):  'green',
@@ -191,7 +209,14 @@ def plot_trajectory(model, save_path=None, step=None):
                   (False, False): 'black'}
         for (qx, qy), color in colors.items():
             mask = (q[:, 0] == qx) & (q[:, 1] == qy)
-            ax.scatter(snap[mask, 0], snap[mask, 1], s=5, color=color)
+            ax.scatter(snap[mask, 0], snap[mask, 1], s=5, color=color, alpha=0.4)
+
+        # --- quiver: velocity field at this time slice ---
+        gx, gy, vx, vy = make_velocity_grid(model, t_val, lim, grid_n=20)
+        mag = np.sqrt(vx**2 + vy**2) + 1e-8
+        ax.quiver(gx, gy, vx / mag, vy / mag, mag,
+                  cmap='viridis', alpha=0.7, scale=25, width=0.003)
+
         ax.set_xlim([-lim, lim])
         ax.set_ylim([-lim, lim])
         ax.set_aspect('equal')
