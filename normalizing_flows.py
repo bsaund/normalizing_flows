@@ -379,5 +379,19 @@ def run_statistics_trial():
 
 
 if __name__ == "__main__":
+    import argparse
+    import shutil
+
+    parser = argparse.ArgumentParser(description='Normalizing Flows (RealNVP) on 2D data.')
+    parser.add_argument('--start-new', action='store_true',
+                        help='Delete existing checkpoints and training images, then start fresh.')
+    args = parser.parse_args()
+
+    if args.start_new:
+        for path in ('checkpoints', 'training_progress'):
+            if os.path.exists(path):
+                shutil.rmtree(path)
+                print("Deleted: {}".format(path))
+
     train_and_run_model()
     # run_statistics_trial()

@@ -354,4 +354,18 @@ def train_and_run_model(display=True):
 
 
 if __name__ == '__main__':
+    import argparse
+    import shutil
+
+    parser = argparse.ArgumentParser(description='Flow Matching on 2D data.')
+    parser.add_argument('--start-new', action='store_true',
+                        help='Delete existing checkpoints and training images, then start fresh.')
+    args = parser.parse_args()
+
+    if args.start_new:
+        for path in ('checkpoints_fm', 'training_progress_fm'):
+            if os.path.exists(path):
+                shutil.rmtree(path)
+                print("Deleted: {}".format(path))
+
     train_and_run_model()
