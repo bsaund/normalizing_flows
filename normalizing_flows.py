@@ -209,14 +209,39 @@ def plot_layers(dist, final=False, save_path=None):
         plt.show()
 
 
+def make_checkpoint_manager(model, optimizer, checkpoint_dir='checkpoints'):
+    """
+    Create a tf.train.Checkpoint + CheckpointManager for the model's networks
+    and optimizer state. Keeps the 3 most recent checkpoints.
+    """
+    ckpt_kwargs = {f'net_{i}': net for i, net in enumerate(model._bijector_nets)}
+    ckpt_kwargs['optimizer'] = optimizer
+    ckpt = tf.train.Checkpoint(**ckpt_kwargs)
+    manager = tf.train.CheckpointManager(ckpt, checkpoint_dir, max_to_keep=3)
+    return ckpt, manager
+
+
+def restore_if_available(ckpt, manager):
+    """Restore the latest checkpoint if one exists. Returns True if restored."""
+    if manager.latest_checkpoint:
+        ckpt.restore(manager.latest_checkpoint).expect_partial()
+        print("Restored checkpoint: {}".format(manager.latest_checkpoint))
+        return True
+    print("No checkpoint found, starting from scratch.")
+    return False
+
+
 def train(model, ds, optimizer, print_period=1000):
     """
     Train `model` on dataset `ds` using optimizer `optimizer`,
     printing the current loss every `print_period` iterations.
     Loss tensor stays on GPU between prints to avoid CPU-GPU sync overhead.
-    Saves a layer-visualization plot to training_progress/ at the same interval.
+    Saves a layer-visualization plot and model checkpoint at the same interval.
     """
     os.makedirs('training_progress', exist_ok=True)
+    ckpt, manager = make_checkpoint_manager(model, optimizer)
+    restore_if_available(ckpt, manager)
+
     start = time()
     itr = ds.__iter__()
     for i in range(int(settings['train_iters'] + 1)):
@@ -227,6 +252,7 @@ def train(model, ds, optimizer, print_period=1000):
             print("{} loss: {}, {}s".format(i, loss_val, time() - start))
             if np.isnan(loss_val):
                 break
+            manager.save()
             save_path = 'training_progress/step_{:07d}.png'.format(i)
             plot_layers(model.flow, save_path=save_path)
     return loss.numpy()
