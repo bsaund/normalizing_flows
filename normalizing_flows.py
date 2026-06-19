@@ -20,6 +20,11 @@ from time import time
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
+# Allow TF to grow GPU memory incrementally rather than claiming it all at once.
+# Important on a shared GPU (e.g. one also driving the display).
+for _gpu in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(_gpu, True)
+
 
 def make_nvp_network(hidden_units, output_units):
     """Return a Keras model used as the shift-and-log-scale network for RealNVP."""
@@ -218,6 +223,11 @@ def print_settings():
     """
     display the settings used when creating the model
     """
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        print("GPU: {}".format(gpus[0].name))
+    else:
+        print("WARNING: No GPU detected, training on CPU")
     print("Using settings:")
     for k in settings.keys():
         print('{}: {}'.format(k, settings[k]))
