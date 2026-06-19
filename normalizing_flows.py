@@ -170,8 +170,10 @@ def plot_layers(dist, final=False, save_path=None, step=None):
     cols = int(len(results) / rows) + (len(results) % rows > 0)
 
     f, arr = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
-    title = 'Step {:,}'.format(step) if step is not None else ''
-    f.suptitle(title, fontsize=16, fontweight='bold')
+    step_str = 'Step {:,}'.format(step) if step is not None else ''
+    info = 'Normalizing Flows (RealNVP)  |  {}  |  bijectors={}  lr={}  batch={}'.format(
+        step_str, settings['num_bijectors'], settings['learning_rate'], settings['batch_size'])
+    f.suptitle(info, fontsize=11, fontweight='bold')
 
     i = 0
     for r in range(rows):

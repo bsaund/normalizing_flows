@@ -192,8 +192,11 @@ def plot_trajectory(model, save_path=None, step=None):
     cols = (n_slices + rows - 1) // rows
     f, arr = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
 
-    title = 'Step {:,}'.format(step) if step is not None else ''
-    f.suptitle(title, fontsize=16, fontweight='bold')
+    step_str = 'Step {:,}'.format(step) if step is not None else ''
+    info = 'Flow Matching (CFM)  |  {}  |  hidden={}  embed={}  lr={}  batch={}'.format(
+        step_str, settings['hidden_units'], settings['time_embed_dim'],
+        settings['learning_rate'], settings['batch_size'])
+    f.suptitle(info, fontsize=11, fontweight='bold')
 
     X0 = snapshots[0]
     for idx, (ax, snap) in enumerate(zip(arr.flat, snapshots)):
