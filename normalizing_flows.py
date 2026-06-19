@@ -141,10 +141,10 @@ class RealNVP(Flow):
             bijector=bijector)
 
 
-def plot_layers(dist, final=False):
+def plot_layers(dist, final=False, save_path=None):
     """
-    Generate samples from the base distribution and visualize the motion of the points after each 
-    layer transformation
+    Generate samples from the base distribution and visualize the motion of the points after each
+    layer transformation. If save_path is given, save to file instead of displaying.
     """
     x = dist.distribution.sample(8000)
     samples = [x]
@@ -182,21 +182,31 @@ def plot_layers(dist, final=False):
             arr[r, c].set_title(names[i])
             arr[r, c].axis('equal')
             i += 1
-    plt.show()
+    if save_path:
+        f.savefig(save_path, bbox_inches='tight')
+        plt.close(f)
+    else:
+        plt.show()
 
     if not final:
         return
 
+    fig2, ax2 = plt.subplots()
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
+    ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
+    ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] > 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
+    ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
-    plt.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
-    plt.axis('equal')
-    plt.show()
+    ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
+    ax2.axis('equal')
+    if save_path:
+        final_path = save_path.replace('.png', '_final.png')
+        fig2.savefig(final_path, bbox_inches='tight')
+        plt.close(fig2)
+    else:
+        plt.show()
 
 
 def train(model, ds, optimizer, print_period=1000):
@@ -204,7 +214,9 @@ def train(model, ds, optimizer, print_period=1000):
     Train `model` on dataset `ds` using optimizer `optimizer`,
     printing the current loss every `print_period` iterations.
     Loss tensor stays on GPU between prints to avoid CPU-GPU sync overhead.
+    Saves a layer-visualization plot to training_progress/ at the same interval.
     """
+    os.makedirs('training_progress', exist_ok=True)
     start = time()
     itr = ds.__iter__()
     for i in range(int(settings['train_iters'] + 1)):
@@ -215,6 +227,8 @@ def train(model, ds, optimizer, print_period=1000):
             print("{} loss: {}, {}s".format(i, loss_val, time() - start))
             if np.isnan(loss_val):
                 break
+            save_path = 'training_progress/step_{:07d}.png'.format(i)
+            plot_layers(model.flow, save_path=save_path)
     return loss.numpy()
 
 
