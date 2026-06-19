@@ -38,7 +38,7 @@ settings = {
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
-    'plot_period': 500,
+    'plot_period': 2000,
     'plot_axis_limit': 4.0,
     'ode_steps': 100,        # Euler steps used when integrating the ODE
     'plot_t_steps': 8,       # number of time slices shown in the trajectory plot
@@ -213,9 +213,9 @@ def plot_trajectory(model, save_path=None, step=None):
 
         # --- quiver: velocity field at this time slice ---
         gx, gy, vx, vy = make_velocity_grid(model, t_val, lim, grid_n=20)
-        mag = np.sqrt(vx**2 + vy**2) + 1e-8
-        ax.quiver(gx, gy, vx / mag, vy / mag, mag,
-                  cmap='viridis', alpha=0.7, scale=25, width=0.003)
+        mag = np.sqrt(vx**2 + vy**2)
+        ax.quiver(gx, gy, vx, vy, mag,
+                  cmap='viridis', alpha=0.7, scale=15, width=0.003)
 
         ax.set_xlim([-lim, lim])
         ax.set_ylim([-lim, lim])
