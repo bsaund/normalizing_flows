@@ -30,15 +30,15 @@ for _gpu in tf.config.list_physical_devices('GPU'):
 
 settings = {
     'batch_size': 1500,
-    'learning_rate': 1e-4,
+    'learning_rate': 3e-4,
     'train_iters': 2e5,
     'hidden_units': [512, 512],
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
-    'plot_period': 100,
+    'plot_period': 500,
     'plot_axis_limit': 5.0,
-    'ode_steps': 100,        # Euler steps used when sampling
+    'ode_steps': 5,        # Euler steps used when sampling
     'plot_t_steps': 8,       # number of time slices shown in the layer plot
 }
 
@@ -122,7 +122,6 @@ class VelocityField(tf_keras.Model):
             loss   = tf.reduce_mean(tf.square(v_pred - u_t))
 
         grads = tape.gradient(loss, self.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 1.0)
         optimizer.apply_gradients(zip(grads, self.trainable_variables))
         return loss
 
