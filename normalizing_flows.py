@@ -56,6 +56,9 @@ settings = {
     'learning_rate': 1e-5,
     'train_iters': 2e5,
     'visualize_data': False,
+    'print_period': 1000,
+    'plot_period': 100,
+    'plot_axis_limit': 5.0,  # fixed axis bounds for all frames so video is stable
 }
 
 
@@ -141,11 +144,14 @@ class RealNVP(Flow):
             bijector=bijector)
 
 
-def plot_layers(dist, final=False, save_path=None):
+def plot_layers(dist, final=False, save_path=None, step=None):
     """
     Generate samples from the base distribution and visualize the motion of the points after each
     layer transformation. If save_path is given, save to file instead of displaying.
+    All subplots use fixed axis bounds (settings['plot_axis_limit']) so frames are stable in video.
     """
+    lim = settings['plot_axis_limit']
+
     x = dist.distribution.sample(8000)
     samples = [x]
     names = [dist.distribution.name]
@@ -155,35 +161,40 @@ def plot_layers(dist, final=False, save_path=None):
         names.append(bijector.name)
 
     results = samples
-
     X0 = results[0].numpy()
 
     rows = 4
     cols = int(len(results) / rows) + (len(results) % rows > 0)
 
     f, arr = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
+    title = 'Step {:,}'.format(step) if step is not None else ''
+    f.suptitle(title, fontsize=16, fontweight='bold')
+
     i = 0
-    # for i in range(len(results)):
     for r in range(rows):
         for c in range(cols):
+            ax = arr[r, c]
             if i >= len(results):
-                break
+                ax.axis('off')
+                continue
             X1 = results[i].numpy()
             idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
-            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
+            ax.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
             idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
-            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
+            ax.scatter(X1[idx, 0], X1[idx, 1], s=5, color='green')
             idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] > 0)
-            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
+            ax.scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
             idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
-            arr[r, c].scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
-            arr[r, c].set_xlim([-5, 5])
-            arr[r, c].set_ylim([-5, 5])
-            arr[r, c].set_title(names[i])
-            arr[r, c].axis('equal')
+            ax.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
+            ax.set_xlim([-lim, lim])
+            ax.set_ylim([-lim, lim])
+            ax.set_aspect('equal')
+            ax.set_title(names[i])
             i += 1
+
+    plt.tight_layout()
     if save_path:
-        f.savefig(save_path, bbox_inches='tight')
+        f.savefig(save_path, dpi=100)
         plt.close(f)
     else:
         plt.show()
@@ -192,6 +203,7 @@ def plot_layers(dist, final=False, save_path=None):
         return
 
     fig2, ax2 = plt.subplots()
+    X1 = results[-1].numpy()
     idx = np.logical_and(X0[:, 0] < 0, X0[:, 1] < 0)
     ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='red')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] < 0)
@@ -200,10 +212,14 @@ def plot_layers(dist, final=False, save_path=None):
     ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='blue')
     idx = np.logical_and(X0[:, 0] > 0, X0[:, 1] > 0)
     ax2.scatter(X1[idx, 0], X1[idx, 1], s=5, color='black')
-    ax2.axis('equal')
+    ax2.set_xlim([-lim, lim])
+    ax2.set_ylim([-lim, lim])
+    ax2.set_aspect('equal')
+    if step is not None:
+        ax2.set_title('Step {:,}'.format(step))
     if save_path:
         final_path = save_path.replace('.png', '_final.png')
-        fig2.savefig(final_path, bbox_inches='tight')
+        fig2.savefig(final_path, dpi=100)
         plt.close(fig2)
     else:
         plt.show()
@@ -231,19 +247,23 @@ def restore_if_available(ckpt, manager):
     return False
 
 
-def train(model, ds, optimizer, print_period=1000):
+def train(model, ds, optimizer):
     """
-    Train `model` on dataset `ds` using optimizer `optimizer`,
-    printing the current loss every `print_period` iterations.
-    Loss tensor stays on GPU between prints to avoid CPU-GPU sync overhead.
-    Saves a layer-visualization plot and model checkpoint at the same interval.
+    Train `model` on dataset `ds` using optimizer `optimizer`.
+    - Prints loss every settings['print_period'] steps.
+    - Saves a layer-visualization PNG and checkpoint every settings['plot_period'] steps.
+    Loss tensor stays on GPU between syncs to avoid CPU-GPU sync overhead.
     """
+    print_period = settings['print_period']
+    plot_period = settings['plot_period']
+
     os.makedirs('training_progress', exist_ok=True)
     ckpt, manager = make_checkpoint_manager(model, optimizer)
     restore_if_available(ckpt, manager)
 
     start = time()
     itr = ds.__iter__()
+    loss = None
     for i in range(int(settings['train_iters'] + 1)):
         X = next(itr)
         loss = model.train_step(X, optimizer)
@@ -252,9 +272,10 @@ def train(model, ds, optimizer, print_period=1000):
             print("{} loss: {}, {}s".format(i, loss_val, time() - start))
             if np.isnan(loss_val):
                 break
+        if i % plot_period == 0:
             manager.save()
             save_path = 'training_progress/step_{:07d}.png'.format(i)
-            plot_layers(model.flow, save_path=save_path)
+            plot_layers(model.flow, save_path=save_path, step=i)
     return loss.numpy()
 
 
