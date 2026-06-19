@@ -45,7 +45,7 @@ settings = {
     # OT-CFM: pair noise→data optimally per mini-batch to reduce path crossings.
     # linear_sum_assignment is O(n³) so ot_batch_size must stay small (≤512).
     # The full training batch is split into chunks of this size.
-    'use_ot': True,
+    'use_ot': False,
     'ot_batch_size': 256,
 }
 
