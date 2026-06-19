@@ -214,7 +214,8 @@ def plot_trajectory(model, save_path=None, step=None):
         # --- quiver: velocity field at this time slice ---
         gx, gy, vx, vy = make_velocity_grid(model, t_val, lim, grid_n=20)
         ax.quiver(gx, gy, vx, vy,
-                  color='gray', alpha=0.7, scale=5, width=0.003)
+                  angles='xy', scale_units='xy', scale=1,
+                  color='gray', alpha=0.7, width=0.003)
 
         ax.set_xlim([-lim, lim])
         ax.set_ylim([-lim, lim])
