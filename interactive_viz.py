@@ -181,8 +181,16 @@ def run_trajectory(obs_val, ode_steps, time_power, n_points):
 # Figure builder
 # ---------------------------------------------------------------------------
 
-def build_figure(obs_x, obs_y, ode_steps, time_power, n_points):
-    snaps, steps_vec = run_trajectory([obs_x, obs_y], ode_steps, time_power, n_points)
+CLASSES = {
+    'brad':  {'one_hot': [1, 0], 'label': 'BRAD'},
+    'katie': {'one_hot': [0, 1], 'label': 'KATIE'},
+}
+
+
+def build_figure(obs_x, obs_y, dataset_class, ode_steps, time_power, n_points):
+    one_hot  = CLASSES[dataset_class]['one_hot']
+    obs_full = [obs_x, obs_y] + one_hot   # [dx, dy, is_brad, is_katie]
+    snaps, steps_vec = run_trajectory(obs_full, ode_steps, time_power, n_points)
     qmasks = {k: v[:n_points] for k, v in _qmasks.items()}
 
     # Panel subtitles: target t + how many steps were used to get there
@@ -237,11 +245,12 @@ def build_figure(obs_x, obs_y, ode_steps, time_power, n_points):
         plot_bgcolor='#f8f8f8',
         title=dict(
             text=(
-                'obs = ({:.2f}, {:.2f}) &nbsp;&nbsp; '
-                'total steps={} &nbsp; power={:.2f} &nbsp; pts={}<br>'
+                '<b>{}</b> &nbsp;&nbsp; obs = ({:.2f}, {:.2f}) &nbsp;&nbsp; '
+                'steps={} &nbsp; power={:.2f} &nbsp; pts={}<br>'
                 '<span style="font-size:10px; color:#888888">'
                 '{}</span>'
-            ).format(obs_x, obs_y, ode_steps, time_power, n_points, sched_str),
+            ).format(CLASSES[dataset_class]['label'],
+                     obs_x, obs_y, ode_steps, time_power, n_points, sched_str),
             font=dict(size=14, color='#333344'),
             x=0.5,
         ),
@@ -298,6 +307,29 @@ def make_app():
                             children=html.Div(id='loading-placeholder',
                                               style={'width': '44px', 'height': '44px'}),
                         ),
+                    ),
+                ],
+            ),
+
+            # Row 0: dataset selector
+            html.Div(
+                style={'padding': '10px 40px 0 40px', 'display': 'flex',
+                       'alignItems': 'center', 'gap': '16px'},
+                children=[
+                    html.Label('Dataset:', style={'fontWeight': 'bold',
+                                                   'fontSize': '14px',
+                                                   'color': '#333344'}),
+                    dcc.RadioItems(
+                        id='radio-class',
+                        options=[
+                            {'label': ' BRAD',  'value': 'brad'},
+                            {'label': ' KATIE', 'value': 'katie'},
+                        ],
+                        value='brad',
+                        inline=True,
+                        inputStyle={'marginRight': '4px'},
+                        labelStyle={'marginRight': '20px', 'fontSize': '14px',
+                                    'cursor': 'pointer'},
                     ),
                 ],
             ),
@@ -372,18 +404,20 @@ def make_app():
     )
 
     @app.callback(
-        Output('trajectory-plot',    'figure'),
+        Output('trajectory-plot',     'figure'),
         Output('loading-placeholder', 'children'),   # drives the spinner
+        Input('radio-class',    'value'),
         Input('slider-x',       'value'),
         Input('slider-y',       'value'),
         Input('slider-steps',   'value'),
         Input('slider-power',   'value'),
         Input('slider-npoints', 'value'),
     )
-    def update(obs_x, obs_y, ode_steps, time_power, n_points):
+    def update(dataset_class, obs_x, obs_y, ode_steps, time_power, n_points):
         fig = build_figure(
             obs_x    or 0.0,
             obs_y    or 0.0,
+            dataset_class or 'brad',
             int(ode_steps  or DEFAULT_ODE_STEPS),
             float(time_power or TIME_POWER),
             int(n_points or DEFAULT_N_POINTS),

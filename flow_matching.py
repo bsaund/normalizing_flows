@@ -38,7 +38,11 @@ settings = {
     'num_data_points': 100000,
     'hidden_units': [1024, 1024, 1024, 1024],
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
-    'obs_dim': 2,            # dimension of the conditioning observation vector
+    # obs vector layout: [dx, dy, is_brad, is_katie]
+    #   dx, dy   — spatial offset (U(-obs_range, obs_range)²)
+    #   is_brad  — 1-hot class bit (1=BRAD, 0=KATIE)
+    #   is_katie — 1-hot class bit (0=BRAD, 1=KATIE)
+    'obs_dim': 4,
     'obs_range': 1.0,        # training offsets drawn from U(-obs_range, obs_range)²
     'visualize_data': False,
     'print_period': 1000,
@@ -195,13 +199,19 @@ def make_velocity_grid(model, t_val, obs_val, lim, grid_n=20):
 
 
 # Conditioning values shown in the trajectory plot — one row per entry.
-# Each entry is [dx, dy] — the offset applied to all BRAD points.
+# obs = [dx, dy, is_brad, is_katie]
 PLOT_CONDITIONS = [
-    [ 0.0,  0.0],   # original BRAD
-    [ 1.0,  0.0],   # shifted right
-    [ 0.0,  1.0],   # shifted up
-    [-1.0, -1.0],   # shifted down-left
+    [ 0.0,  0.0, 1, 0],   # BRAD centered
+    [ 0.0,  0.0, 0, 1],   # KATIE centered
+    [ 1.0,  0.0, 1, 0],   # BRAD shifted right
+    [ 1.0,  0.0, 0, 1],   # KATIE shifted right
 ]
+
+def _obs_label(obs_val):
+    """Human-readable label for a condition vector [dx, dy, is_brad, is_katie]."""
+    name = 'BRAD' if obs_val[2] == 1 else 'KATIE'
+    dx, dy = obs_val[0], obs_val[1]
+    return '{} offset=({:.1f},{:.1f})'.format(name, dx, dy)
 
 
 def plot_trajectory(model, save_path=None, step=None):
@@ -260,7 +270,7 @@ def plot_trajectory(model, save_path=None, step=None):
             ax.set_aspect('equal')
 
             col_label = 't={:.2f}'.format(t_val)
-            row_label = 'obs={}'.format(obs_val)
+            row_label = _obs_label(obs_val)
             ax.set_title('{}\n{}'.format(row_label, col_label) if col == 0 else col_label,
                          fontsize=9)
 
@@ -349,22 +359,38 @@ def create_dataset():
     """
     Build a dataset of (x1, obs) pairs for conditioned flow matching.
 
-    For each BRAD point `p`, a random 2-D offset `o ~ U(-obs_range, obs_range)²`
-    is sampled and stored alongside the shifted point `x1 = p + o`.
-    At training time the model must learn: given obs=o, push noise toward BRAD+o.
+    Points are drawn 50/50 from BRAD.png and KATIE.png.
+    obs = [dx, dy, is_brad, is_katie]:
+      - dx, dy   — random spatial offset (U(-obs_range, obs_range)²)
+      - is_brad  — 1-hot class bit  (1 if BRAD, else 0)
+      - is_katie — 1-hot class bit  (0 if BRAD, else 1)
+    Target position: x1 = source_point + (dx, dy)
     """
-    brad_pts = create_points('BRAD.png', settings['num_data_points'])
+    n_per_class = settings['num_data_points'] // 2
+    obs_range   = settings['obs_range']
+
+    brad_pts  = create_points('BRAD.png',  n_per_class)
+    katie_pts = create_points('KATIE.png', n_per_class)
     if settings['visualize_data']:
         visualize_data(brad_pts)
 
-    obs_range = settings['obs_range']
-    offsets   = np.random.uniform(-obs_range, obs_range,
-                                  size=(len(brad_pts), settings['obs_dim'])).astype(np.float32)
-    x1 = (brad_pts + offsets).astype(np.float32)
+    def make_obs(pts, one_hot):
+        offsets = np.random.uniform(-obs_range, obs_range,
+                                    (len(pts), 2)).astype(np.float32)
+        class_col = np.tile(one_hot, (len(pts), 1)).astype(np.float32)
+        x1  = (pts + offsets).astype(np.float32)
+        obs = np.concatenate([offsets, class_col], axis=1)   # (n, 4)
+        return x1, obs
 
-    ds = tf.data.Dataset.from_tensor_slices((x1, offsets))
+    brad_x1,  brad_obs  = make_obs(brad_pts,  [1, 0])
+    katie_x1, katie_obs = make_obs(katie_pts, [0, 1])
+
+    x1_all  = np.concatenate([brad_x1,  katie_x1],  axis=0)
+    obs_all = np.concatenate([brad_obs, katie_obs], axis=0)
+
+    ds = tf.data.Dataset.from_tensor_slices((x1_all, obs_all))
     ds = ds.repeat()
-    ds = ds.shuffle(buffer_size=len(brad_pts))
+    ds = ds.shuffle(buffer_size=len(x1_all))
     ds = ds.prefetch(3 * settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
     return ds, brad_pts
