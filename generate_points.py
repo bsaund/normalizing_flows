@@ -24,8 +24,8 @@ def create_points(file_name, num_points):
         pts = []
         while len(pts) < num_points:
             pt = np.random.rand(2).astype('f')
-            x = int((pt[0]) * w)
-            y = int((1 - pt[1]) * h)
+            x = min(int(pt[0] * w), w - 1)
+            y = min(int((1 - pt[1]) * h), h - 1)
 
             pxl = image.getpixel((x, y))
             if pxl[0] != 255:
