@@ -32,14 +32,16 @@ for _gpu in tf.config.list_physical_devices('GPU'):
 
 settings = {
     'batch_size': 1500,
-    'learning_rate': 3e-4,
-    'train_iters': 2e5,
-    'hidden_units': [512, 512, 512],
+    'learning_rate_start': 3e-4,
+    'learning_rate_end':   1e-6,   # cosine decay target
+    'train_iters': 5e5,
+    'num_data_points': 50000,
+    'hidden_units': [1024, 1024, 1024],
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
     'plot_period': 2000,
-    'plot_axis_limit': 4.0,
+    'plot_axis_limit': 3.0,
     'ode_steps': 100,        # Euler steps used when integrating the ODE
     'plot_t_steps': 8,       # number of time slices shown in the trajectory plot
 }
@@ -192,9 +194,10 @@ def plot_trajectory(model, save_path=None, step=None):
     f, arr = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
 
     step_str = 'Step {:,}'.format(step) if step is not None else ''
-    info = 'Flow Matching (CFM)  |  {}  |  hidden={}  embed={}  lr={}  batch={}'.format(
-        step_str, settings['hidden_units'], settings['time_embed_dim'],
-        settings['learning_rate'], settings['batch_size'])
+    info = 'Flow Matching (CFM)  |  {}  |  hidden={}  lr={}→{}  batch={}'.format(
+        step_str, settings['hidden_units'],
+        settings['learning_rate_start'], settings['learning_rate_end'],
+        settings['batch_size'])
     f.suptitle(info, fontsize=11, fontweight='bold')
 
     X0 = snapshots[0]
@@ -308,12 +311,12 @@ def train(model, ds, optimizer):
 # ---------------------------------------------------------------------------
 
 def create_dataset():
-    pts = create_points('BRAD.png', 10000)
+    pts = create_points('BRAD.png', settings['num_data_points'])
     if settings['visualize_data']:
         visualize_data(pts)
     ds = tf.data.Dataset.from_tensor_slices(pts)
     ds = ds.repeat()
-    ds = ds.shuffle(buffer_size=9000)
+    ds = ds.shuffle(buffer_size=len(pts))
     ds = ds.prefetch(3 * settings['batch_size'])
     ds = ds.batch(settings['batch_size'])
     return ds, pts
@@ -339,8 +342,12 @@ def train_and_run_model(display=True):
     model(tf.zeros((1, 2)), tf.zeros((1, 1)))
     model.summary()
 
-    optimizer = tf_keras.optimizers.Adam(
-        learning_rate=settings['learning_rate'], jit_compile=False)
+    lr_schedule = tf_keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=settings['learning_rate_start'],
+        decay_steps=int(settings['train_iters']),
+        alpha=settings['learning_rate_end'] / settings['learning_rate_start'],
+    )
+    optimizer = tf_keras.optimizers.Adam(lr_schedule, jit_compile=False)
 
     loss = train(model, ds, optimizer)
     print("Final loss: {:.6f}".format(loss))
