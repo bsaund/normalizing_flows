@@ -105,6 +105,45 @@ settings = {
 
 ---
 
+## 2026-06-20 — Conditioning Experiment
+
+### Motivation
+The core value of a generative model is not just "generate BRAD" but "generate BRAD *given some context*". The simplest possible conditioning signal is a 2D spatial offset: the model should learn that if `obs = (dx, dy)`, the output should be BRAD shifted by that offset.
+
+This is a minimal but complete end-to-end test of the conditioning pipeline — if it works, we know the observation is being propagated correctly through training and inference.
+
+### Changes
+
+**Architecture (`flow_matching.py`)**
+- `VelocityField.call(x, t, obs)` — observation concatenated after the time embedding: input is `[x(2), t_embed(64), obs(2)]` = 68D total. Only 2 extra input dimensions; everything else unchanged.
+- New `obs_dim: 2` and `obs_range: 1.0` settings.
+
+**Dataset**
+- For each BRAD point `p`, sample a random offset `o ~ U(-1, 1)²`.
+- Store `(x1 = p + o, obs = o)` pairs.
+- At training time the model sees shifted BRAD points alongside the offset that caused the shift. It must learn the velocity field conditioned on that offset.
+
+**Visualization**
+- `plot_trajectory` now shows 4 rows, one per conditioning value: `(0,0)`, `(1,0)`, `(0,1)`, `(-1,-1)`.
+- Row 0 should look like the original BRAD; other rows should show it shifted accordingly.
+- `plot_axis_limit` bumped to `4.0` to accommodate the shift.
+
+### Interactive Applet (`interactive_viz.py`)
+New standalone script — loads the trained checkpoint and opens a live matplotlib window:
+- 5 scatter panels across the top showing the ODE trajectory at t=0, 0.25, 0.5, 0.75, 1.0
+- Two sliders (`obs x`, `obs y`) below
+- Every slider drag re-runs the ODE integration (30 Euler steps × 2000 points on GPU) and updates all panels in real time
+
+```bash
+python interactive_viz.py                   # default
+python interactive_viz.py --ode-steps 10    # faster, rougher
+python interactive_viz.py --n-points 5000   # more points
+```
+
+Expected behavior: drag `obs x` from 0 → 1 and BRAD glides one unit right in real time.
+
+---
+
 ## 2026-06-20 — Scaling Up Flow Matching
 
 ### Changes
