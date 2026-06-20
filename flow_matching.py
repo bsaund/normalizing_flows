@@ -34,9 +34,9 @@ settings = {
     'batch_size': 1500,
     'learning_rate_start': 3e-4,
     'learning_rate_end':   1e-6,   # cosine decay target
-    'train_iters': 5e5,
-    'num_data_points': 50000,
-    'hidden_units': [1024, 1024, 1024],
+    'train_iters': 5e6,
+    'num_data_points': 100000,
+    'hidden_units': [1024, 1024, 1024, 1024],
     'time_embed_dim': 64,    # sinusoidal time embedding dimension
     'visualize_data': False,
     'print_period': 1000,
