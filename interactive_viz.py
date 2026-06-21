@@ -367,9 +367,9 @@ def make_app():
                                style=label_style_grey),
                     dcc.Slider(
                         id='slider-steps',
-                        min=5, max=100, step=5, value=DEFAULT_ODE_STEPS,
+                        min=1, max=100, step=1, value=DEFAULT_ODE_STEPS,
                         marks={v: {'label': str(v), 'style': {'color': '#557755'}}
-                               for v in [5, 10, 20, 50, 100]},
+                               for v in [1, 5, 10, 20, 50, 100]},
                         tooltip={'placement': 'bottom', 'always_visible': True},
                         updatemode='mouseup',
                     ),

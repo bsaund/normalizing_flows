@@ -184,6 +184,17 @@ Added support for generating points from any rendered text string, not just hard
 - `create_points_from_text(text, num_points)` — samples from dark pixels of the rendered image; same coordinate normalization as `create_points()`
 - `text_preview.py` — Dash app at port 8051 for interactively previewing any word and its sampled point cloud before committing to training
 
+### Text-to-Points Infrastructure (`generate_points.py`, `text_preview.py`)
+New capability: generate training point clouds from arbitrary text strings without needing pre-made PNG files.
+
+| Function | Description |
+|---|---|
+| `render_text_image(text, font_size, padding)` | Renders text to a PIL `Image` using the best available bold TTF font (via `matplotlib.font_manager`). Falls back to the PIL built-in if no system font is found. |
+| `create_points_from_text(text, num_points, font_size)` | Samples `num_points` from dark pixels of the rendered image; uses the same coordinate normalisation as `create_points()`. |
+| `text_preview.py` | Dash app at port 8051 for interactively previewing any word and its sampled point cloud before committing to training. Controls: text input, font-size slider, num-points slider. |
+
+This infrastructure removes the manual step of creating PNGs and opens the door to conditioning on arbitrary words.
+
 ---
 
 ## 2026-06-20 — Scaling Up Flow Matching
@@ -195,6 +206,100 @@ Added support for generating points from any rendered text string, not just hard
 
 ### Bug fixed
 `generate_points.py`: off-by-one error when sampling — `int(pt[0] * w)` can equal `w` when `pt[0]=1.0`, causing `IndexError: image index out of range`. Only triggered reliably at 100k+ samples. Fixed by clamping: `min(int(pt[0] * w), w - 1)`.
+
+---
+
+## 2026-06-21 — GPU Sinkhorn Optimal Transport CFM
+
+### Motivation
+Basic CFM pairs each noise sample `x0[i]` with a **random** data point `x1[j]`.
+Different x0 samples targeting the same region of BRAD/KATIE can be assigned to
+far-away data points, forcing the velocity field to learn crossing, tangled paths.
+Optimal Transport CFM (OT-CFM) fixes this by pairing `x0` and `x1` to minimise
+total squared Euclidean distance, so trajectories cross as little as possible.
+
+### Previous attempt (CPU linear_sum_assignment)
+An earlier prototype used `scipy.optimize.linear_sum_assignment` (Hungarian
+algorithm) for exact OT.  It was removed because:
+1. Hungarian runs on CPU → bottleneck in every training step
+2. O(n³) complexity makes it impractical for batch size 1500
+
+### This experiment: GPU Sinkhorn
+Sinkhorn is an entropic-regularised approximation to OT that runs entirely on
+GPU as a sequence of matrix operations:
+
+```
+K = exp(−C / ε)        where  C[i,j] = ||x0[i] − x1[j]||²
+repeat n_iters:
+  log_u ← log(1/n) − logsumexp(log_K + log_v,  axis=1)
+  log_v ← log(1/n) − logsumexp(log_K + log_u,  axis=0)
+coupling:  log_P[i,j] = log_u[i] + log_K[i,j] + log_v[j]
+pair:      for each x0[i], sample x1[σ(i)] ~ softmax(log_P[i,:])
+```
+
+The loop is unrolled at `@tf.function` trace time (2 × `n_iters`
+`reduce_logsumexp` ops on a `(B, B)` matrix).  On a GTX 1070 this adds < 1 %
+wall-clock overhead over the network forward/backward pass.
+
+### Parameters added to `settings`
+| Key | Default | Meaning |
+|---|---|---|
+| `use_sinkhorn` | `True` | Enable/disable OT pairing |
+| `sinkhorn_epsilon` | `0.05` | Regularisation: smaller → sharper OT, more Sinkhorn iters needed |
+| `sinkhorn_iters` | `30` | Sinkhorn iterations (unrolled into TF graph at trace time) |
+
+### Design notes
+- **Log-domain Sinkhorn** is used throughout to avoid exp-overflow/underflow.
+  With ε = 0.05 and 2D data in [−4, 4], the cost matrix reaches ~130, so
+  log_K can be as low as −2600 — fine for logsumexp but dangerous for raw exp.
+- **Obs reordering**: each data point `x1[j]` carries an `obs[j]` (offset +
+  class one-hot).  When x1 is reordered by the OT permutation σ, `obs` is
+  reordered by the same permutation so the conditioning stays consistent.
+- **Epsilon tradeoff**: small ε (e.g. 0.01) gives near-exact OT but needs
+  more iterations and the coupling is sharper (less stochastic). Large ε
+  (e.g. 1.0) approaches random pairing. ε = 0.05 is a practical middle ground.
+
+### Results
+
+**Pro — far fewer ODE steps needed for a readable result**
+
+| ODE steps | Random CFM | Sinkhorn OT-CFM |
+|---|---|---|
+| 1 | noise | recognisable blob |
+| 3 | barely anything | readable "BRAD" |
+| 5 | first hints of letters | clean letters |
+| 20–100 | needed to look good | overkill |
+
+OT reduces trajectory crossings so the paths are straighter; a single Euler
+step already lands points close to the letter shapes.  This is the main
+theoretical promise of OT-CFM delivered in practice.
+
+**Con — centre-of-distribution bias under spatial offset conditioning**
+
+When `(dx, dy)` shifts BRAD away from the origin, the generated point cloud
+does *not* fully follow.  Points cluster toward the centre of the training
+distribution rather than faithfully tracking the requested offset.
+
+Root cause: with `epsilon = 0.05` the Sinkhorn coupling is very sharp (nearly
+a hard one-to-one assignment).  Gaussian noise samples `x0 ~ N(0, I)` are
+densest near the origin.  OT pairs each `x0[i]` with the nearest available
+`x1[j]` — which for centred noise is always a near-origin data point,
+regardless of what offset `obs` requests.  Noise samples that *should* reach
+shifted data points (e.g., BRAD at `dx=2`) are re-routed to nearby unshifted
+data points in the same batch.  The velocity field never sees sufficient
+training signal for the far-shifted regime, so inference in that region
+produces points pulled back toward the origin.
+
+**Takeaways**
+- Sinkhorn OT is a real win for *step efficiency* in the unconditioned / lightly
+  conditioned case.
+- For *spatial offset conditioning* the sharp coupling actively fights the
+  conditioning signal.  A softer epsilon (0.1 – 0.5) or abandoning OT pairing
+  is preferable when large offsets are part of the observation space.
+- The loss metric is not comparable between random-CFM and OT-CFM: OT targets
+  are intrinsically shorter vectors, so OT loss floors at ~0.025 while
+  random-CFM floors at ~0.35 — neither number predicts generation quality on
+  its own.
 
 ---
 
