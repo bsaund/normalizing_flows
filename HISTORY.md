@@ -144,6 +144,48 @@ Expected behavior: drag `obs x` from 0 → 1 and BRAD glides one unit right in r
 
 ---
 
+## 2026-06-20 — Conditioning on Dataset Class (BRAD / KATIE) + Spatial Offset
+
+### Motivation
+The next step toward a general conditioned generative model: the model should learn to generate *different distributions* based on a discrete observation, not just a spatial shift. Adding a second PNG (`KATIE.png`) and conditioning on a 1-hot class selector tests whether the model can route flow trajectories to entirely different target shapes.
+
+### Observation vector layout
+`obs = [dx, dy, is_brad, is_katie]`  — total `obs_dim = 4`
+
+| Dims | Meaning |
+|------|---------|
+| 0–1 | Spatial offset `(dx, dy) ~ U(-1, 1)²` applied to source points |
+| 2   | 1-hot: `1` if target is BRAD, `0` otherwise |
+| 3   | 1-hot: `1` if target is KATIE, `0` otherwise |
+
+One-hot encoding chosen over a single integer class index because it gives the model explicit independent input dimensions per class, avoids ordinal bias, and is trivially extensible to N classes.
+
+### Dataset
+- 50% of samples from `BRAD.png`, 50% from `KATIE.png` (n/2 each)
+- Each sample: `x1 = source_point + (dx, dy)`, `obs = [dx, dy, class_one_hot]`
+- Total `num_data_points = 100k` → 50k per class
+
+### Result
+The model successfully learns to:
+- Generate **BRAD** letter strokes when `obs[2]=1, obs[3]=0`
+- Generate **KATIE** letter strokes when `obs[2]=0, obs[3]=1`
+- Apply the correct spatial shift `(dx, dy)` in both cases
+
+The `PLOT_CONDITIONS` in `flow_trajectory` shows 4 rows: BRAD/KATIE × centered/shifted-right, making both classes visible in every training progress image.
+
+### Interactive Visualization Update (`interactive_viz.py`)
+- Added a `RadioItems` selector (BRAD / KATIE) at the top of the page
+- Clicking the radio button immediately re-runs inference with the appropriate 1-hot class bit and updates all 5 trajectory panels
+- The title now shows the active class name in bold
+
+### Text-to-Points Infrastructure (`generate_points.py`, `text_preview.py`)
+Added support for generating points from any rendered text string, not just hardcoded PNGs:
+- `render_text_image(text, font_size)` — renders text to a PIL image using the best available bold TTF font (found via `matplotlib.font_manager`)
+- `create_points_from_text(text, num_points)` — samples from dark pixels of the rendered image; same coordinate normalization as `create_points()`
+- `text_preview.py` — Dash app at port 8051 for interactively previewing any word and its sampled point cloud before committing to training
+
+---
+
 ## 2026-06-20 — Scaling Up Flow Matching
 
 ### Changes
