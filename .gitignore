@@ -5,5 +5,20 @@ __pycache__/
 .pytest_cache/
 training_progress/
 training_progress_fm/
+training_progress_fm_cond/
+training_progress_fm_cond_not_ot/
+training_progress_fm_cond_ot/
+training_progress_fm_single/
+training_progress_fm_text/
+training_progress_fm_two/
 checkpoints/
 checkpoints_fm/
+checkpoints_fm_cond/
+checkpoints_fm_cond_not_ot/
+checkpoints_fm_cond_ot/
+checkpoints_fm_single/
+checkpoints_fm_text/
+checkpoints_fm_two/
+
+# Video files — ignored by default; add manually with `git add -f filename.mp4`
+*.mp4
