@@ -197,6 +197,74 @@ This infrastructure removes the manual step of creating PNGs and opens the door 
 
 ---
 
+## 2026-06-22 — Transformer Flow Matching: Single-Letter and Two-Letter Experiments
+
+### Single-letter PoC (A–Z)
+Architecture: d_model=128, n_layers=2, n_heads=2 (~426k params).
+Vocabulary: all 26 uppercase letters.
+Result: **converged cleanly in ~1300 steps**. Letters were clearly recognisable very early.
+This confirms the core architecture works — the coord token attends to the char token,
+and the model correctly routes each Gaussian point toward the appropriate letter stroke.
+
+### Two-letter experiment
+Architecture: d_model=128, n_layers=3, n_heads=2 (~625k params).
+Vocabulary: 200 random 2-char pairs, 500 pts/word → 100k static samples.
+Settings: train_iters=2e6, cosine LR 3e-4 → 1e-6.
+
+**Observed training trajectory:**
+
+| Steps | Quality |
+|---|---|
+| 20k | Letters forming, fairly crisp |
+| 50k | Peak crispness |
+| 100k | Crisper but missing some strokes (sampling bias) |
+| 150k | Starting to blur |
+| 400k | Letters no longer recognisable |
+
+The model found a good solution early then progressively degraded.
+
+### Root-cause analysis
+
+**1. Learning rate too high for too long (primary cause)**
+
+The cosine schedule decays over `train_iters=2e6` steps.
+At the observed peak (~50k steps) the LR is still at ~99% of its starting value (3e-4).
+The model found a good solution, then continued receiving large gradient updates for
+another 350k steps — eroding the learned representation. Classic "trained past the
+optimum" failure.
+
+```
+step 50k  →  LR ≈ 2.98e-4  (99% of max)   ← peak quality here
+step 400k →  LR ≈ 2.58e-4  (86% of max)   ← quality gone
+```
+
+**2. Dataset over-repetition (secondary cause)**
+
+100k static training samples × 2M steps × 1500 batch = each sample seen ~30,000 times.
+With a fixed, small dataset, the optimizer has nothing left to learn and begins oscillating
+around the noise in the data.
+
+**3. Architecture probably sufficient** — the single-letter result shows the transformer
+can represent individual character shapes. Two letters should be a composition of that
+knowledge, not a qualitatively harder task for the architecture.
+
+### Fixes to try next
+- **Train/validation split**: hold out a set of words unseen during training (e.g. 20% of
+  the 200-word vocab).  Track validation loss alongside training loss.  If val loss stops
+  improving while train loss keeps falling, that's the clean stopping signal — save that
+  checkpoint.  This is more principled than visual inspection and would have caught the
+  degradation automatically.
+- Reduce `train_iters` to ~1e5 (match observed peak) or use early stopping on val loss.
+- Regenerate offsets dynamically each epoch instead of baking them in at dataset creation
+  (increases effective diversity from 100k to essentially infinite, delays over-repetition).
+- Increase dataset size (more words, more pts/word) as a simpler alternative.
+
+### Status: paused
+Experiment paused at this point to let the project rest.  Next logical step is to add a
+train/validation split and use it to find the optimal stopping point reliably.
+
+---
+
 ## 2026-06-20 — Scaling Up Flow Matching
 
 ### Changes
